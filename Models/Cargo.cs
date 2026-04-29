@@ -1,0 +1,71 @@
+namespace GeneratedModels
+{
+    public class Cargo
+    {
+        public bool isConsolidation { get; set; }
+        public int CargoID { get; set; }
+        public string CargoNumber { get; set; }
+        public string JobNo { get; set; }
+        public string MasterNo { get; set; }
+        public string HouseNo { get; set; }
+        public string ModeOfTransport { get; set; }
+        public string TransportDirection { get; set; }
+        public int? IncoTermID { get; set; }
+        public int? TypeOfMoveID { get; set; }
+        public int? PickupAddressID { get; set; }
+        public int? DeliveryAddressID { get; set; }
+        public int? OpportunityID { get; set; }
+        public string CustomerReference { get; set; }
+        public int? POLID { get; set; }
+        public string POL { get; set; }
+        public int? PODID { get; set; }
+        public string POD { get; set; }
+        public DateTime? ETD { get; set; }
+        public DateTime? ETA { get; set; }
+        public int? ShipperID { get; set; }
+        public int? ShipperAddressID { get; set; }
+        public string Shipper { get; set; }
+        public int? ConsigneeID { get; set; }
+        public int? ConsigneeAddressID { get; set; }
+        public string Consignee { get; set; }
+        public int? NotifyParty1ID { get; set; }
+        public int? NotifyParty1AddressID { get; set; }
+        public string NotifyParty1 { get; set; }
+        public int? NotifyParty2ID { get; set; }
+        public int? NotifyParty2AddressID { get; set; }
+        public int? ForwarderID { get; set; }
+        public int? ForwardedAddressID { get; set; }
+        public int? OriginAgentID { get; set; }
+        public int? OriginAgentAddressID { get; set; }
+        public int? DestinationAgentID { get; set; }
+        public int? DestinationAgentAddressID { get; set; }
+        public string Notes { get; set; }
+        public int? CreatedBy { get; set; }
+        public DateTime? DateCreated { get; set; }
+        public int? ModifiedBy { get; set; }
+        public DateTime? DateModified { get; set; }
+        public int? DeletedBy { get; set; }
+        public DateTime? DateDeleted { get; set; }
+        public bool? isDeleted { get; set; }
+        public int? CustomerID { get; set; }
+        public string CargoApprovalStatus { get; set; }
+        public string CargoSOPApprovalStatus { get; set; }
+        public int? OfficeID { get; set; }
+        public string FreightStatus { get; set; }
+        public string PaymentTerms { get; set; }
+        public string InvoicingParty { get; set; }
+        public int? JobType { get; set; }
+        public bool? isHBLNOautogenerate { get; set; }
+        public int? SalesQuoteID { get; set; }
+        public bool? isLocked { get; set; }
+        public int? LockedBy { get; set; }
+        public DateTime? LockedDate { get; set; }
+        public string HblTerm { get; set; }
+        public string MblTerm { get; set; }
+        public string HblStatus { get; set; }
+        public string MblStatus { get; set; }
+        public string FreeDays { get; set; }
+        public string POR { get; set; }
+        public bool? isGstJob { get; set; }
+    }
+}

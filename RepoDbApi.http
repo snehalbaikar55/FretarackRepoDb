@@ -1,0 +1,6 @@
+@RepoDbApi_HostAddress = http://localhost:5135
+
+GET {{RepoDbApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

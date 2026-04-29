@@ -1,0 +1,77 @@
+namespace GeneratedModels
+{
+    public class OceanShipmentRouting
+    {
+        public int OceanRoutingID { get; set; }
+        public int ShipmentID { get; set; }
+        public int LegNumber { get; set; }
+        public int POLID { get; set; }
+        public string POL { get; set; }
+        public int PODID { get; set; }
+        public string POD { get; set; }
+        public DateTime? ETD { get; set; }
+        public DateTime? ATD { get; set; }
+        public DateTime? ETA { get; set; }
+        public DateTime? ATA { get; set; }
+        public int? LoadingTerminalID { get; set; }
+        public string LoadingTerminalName { get; set; }
+        public int? UnloadingTerminalID { get; set; }
+        public string UnloadingTerminalName { get; set; }
+        public int? OceanCarrierID { get; set; }
+        public string OceanCarrierName { get; set; }
+        public int? ContainerAgentID { get; set; }
+        public int? VesselID { get; set; }
+        public string VesselName { get; set; }
+        public int? VesselFlagID { get; set; }
+        public string VesselFlagName { get; set; }
+        public string LlyodsCode { get; set; }
+        public string VoyageNumber { get; set; }
+        public string IMONumber { get; set; }
+        public DateTime? DocumentCutoffDate { get; set; }
+        public DateTime? GatesClosingDate { get; set; }
+        public bool? isPOT1 { get; set; }
+        public int? POT1ID { get; set; }
+        public string POT1 { get; set; }
+        public bool? isPOT2 { get; set; }
+        public int? POT2ID { get; set; }
+        public string POT2 { get; set; }
+        public string BookingNumber { get; set; }
+        public DateTime? BookingDate { get; set; }
+        public string INTTRARefNo { get; set; }
+        public int? CreatedBy { get; set; }
+        public DateTime? DateCreated { get; set; }
+        public int? ModifiedBy { get; set; }
+        public DateTime? DateModified { get; set; }
+        public int? DeletedBy { get; set; }
+        public DateTime? DateDeleted { get; set; }
+        public bool? isDeleted { get; set; }
+        public string BuiltYear { get; set; }
+        public int? CarrierAgentID { get; set; }
+        public string CarrierAgent { get; set; }
+        public DateTime? BLInstructionCutoff { get; set; }
+        public DateTime? LoadingDate { get; set; }
+        public string PlaceOfLoading { get; set; }
+        public string PlaceOfFinalDestination { get; set; }
+        public DateTime? Transhipment1ETA { get; set; }
+        public DateTime? Transhipment1ETD { get; set; }
+        public string Transhipment1Vessel { get; set; }
+        public DateTime? Transhipment2ETA { get; set; }
+        public DateTime? Transhipment2ETD { get; set; }
+        public string Transhipment2Vessel { get; set; }
+        public string ArrivalNoticeTo { get; set; }
+        public string BookingTo { get; set; }
+        public string BookingLoadingPlace { get; set; }
+        public string BookingTrucking { get; set; }
+        public DateTime? BookingWarehousePickupDate { get; set; }
+        public string BookingNotes { get; set; }
+        public string BookingContainerCount { get; set; }
+        public string BookingCommodity { get; set; }
+        public string BookingPayableAt { get; set; }
+        public string BookingOceanFreight { get; set; }
+        public string BookingPortCharges { get; set; }
+        public string BookingBLCost { get; set; }
+        public string BookingTruckingCost { get; set; }
+        public string BookingLCNo { get; set; }
+        public string BookingOrderNo { get; set; }
+    }
+}

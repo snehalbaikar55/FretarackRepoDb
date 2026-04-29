@@ -1,0 +1,56 @@
+namespace GeneratedModels
+{
+    public class vw_ProfitReport_Hasan_LIV
+    {
+        public decimal COST_NONTAX { get; set; }
+        public decimal REVENUE_NONTAX { get; set; }
+        public decimal GROSS PROFIT_NONTAX { get; set; }
+        public decimal Realized Cost { get; set; }
+        public decimal Realized Revenue { get; set; }
+        public decimal Pending Cost { get; set; }
+        public decimal Pending Revenue { get; set; }
+        public decimal? Pending Profit { get; set; }
+        public decimal? Realized Profit { get; set; }
+        public string ReportRegion { get; set; }
+        public string ServiceType { get; set; }
+        public string Carrier { get; set; }
+        public string SALES EXECUTIVE { get; set; }
+        public string Branch { get; set; }
+        public decimal? Gross Weight { get; set; }
+        public decimal? Chargeable Weight { get; set; }
+        public decimal? VOLUME CBM { get; set; }
+        public int? 20GP { get; set; }
+        public int? 20HC { get; set; }
+        public int? 20RF { get; set; }
+        public int? 40GP { get; set; }
+        public int? 40HC { get; set; }
+        public int? 40HCRF { get; set; }
+        public int? 40RF { get; set; }
+        public int? 45GP { get; set; }
+        public decimal? TEU { get; set; }
+        public string NominationType { get; set; }
+        public string AgentName { get; set; }
+        public string RoofAgent { get; set; }
+        public string Handledby { get; set; }
+        public string JobNo { get; set; }
+        public int? MIS_YEAR { get; set; }
+        public int? MIS_MONTH { get; set; }
+        public int? JobYear { get; set; }
+        public int? JobMonth { get; set; }
+        public int? JobWeek { get; set; }
+        public DateTime? BOOKING_DATE { get; set; }
+        public DateTime? JobCreatedDate { get; set; }
+        public string JobType { get; set; }
+        public string Customer { get; set; }
+        public string GROUP COMPANY { get; set; }
+        public int? GroupCompanyID { get; set; }
+        public string SHIPPER { get; set; }
+        public string CONSIGNEE { get; set; }
+        public DateTime? ETD { get; set; }
+        public DateTime? ETA { get; set; }
+        public string POL { get; set; }
+        public string POL Country { get; set; }
+        public string POD { get; set; }
+        public string POD Country { get; set; }
+    }
+}

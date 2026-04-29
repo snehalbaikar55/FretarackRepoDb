@@ -1,0 +1,76 @@
+namespace GeneratedModels
+{
+    public class backup_SalesQuote_New20241219
+    {
+        public bool isDeleted { get; set; }
+        public bool isContract { get; set; }
+        public int SalesQuoteID { get; set; }
+        public string SalesQuoteNumber { get; set; }
+        public int CompanyID { get; set; }
+        public int ContactID { get; set; }
+        public int PreparedBy { get; set; }
+        public int SalesPersonID { get; set; }
+        public bool isRejected { get; set; }
+        public Guid rowguid { get; set; }
+        public int TypeOfMoveID { get; set; }
+        public bool isDraft { get; set; }
+        public bool isApproved { get; set; }
+        public DateTime? ApprovedDate { get; set; }
+        public int? IncoTermID { get; set; }
+        public int? OldSalesQuoteID { get; set; }
+        public int? RevisionID { get; set; }
+        public int? FileID { get; set; }
+        public int? PickupAddressID { get; set; }
+        public int? DeliveryAddressID { get; set; }
+        public string PickupAddress { get; set; }
+        public string DeliveryAddress { get; set; }
+        public DateTime? FollowUp1 { get; set; }
+        public string FollowUp1Remarks { get; set; }
+        public DateTime? FollowUp2 { get; set; }
+        public string FollowUp2Remarks { get; set; }
+        public int? CompanyAddressID { get; set; }
+        public string CompanyAddress { get; set; }
+        public DateTime? RejectedDate { get; set; }
+        public int? CreatedBy { get; set; }
+        public DateTime? DateCreated { get; set; }
+        public int? ModifiedBy { get; set; }
+        public DateTime? DateModified { get; set; }
+        public int? DeletedBy { get; set; }
+        public DateTime? DateDeleted { get; set; }
+        public DateTime? SalesQuoteDate { get; set; }
+        public DateTime? EnqReceivedDate { get; set; }
+        public DateTime? ExpiryDate { get; set; }
+        public string ContractNumber { get; set; }
+        public bool? showTotal { get; set; }
+        public bool? showTax { get; set; }
+        public bool? showCarrier { get; set; }
+        public bool? isHazardous { get; set; }
+        public string Commodity { get; set; }
+        public decimal? CommodityValue { get; set; }
+        public int? CommodityValueCurrencyID { get; set; }
+        public string CommodityValueCurrency { get; set; }
+        public string RequiredEquipment { get; set; }
+        public decimal? GrossWeight { get; set; }
+        public decimal? Volume { get; set; }
+        public decimal? VolumeWeight { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+        public string CompanyDisplayName { get; set; }
+        public string ContactDisplayName { get; set; }
+        public string SalesPersonDisplayName { get; set; }
+        public string PreparedByDislayName { get; set; }
+        public string EmailTo { get; set; }
+        public string EmailCC { get; set; }
+        public string ContactEmail { get; set; }
+        public string ContactTelephone { get; set; }
+        public string InternalNotes { get; set; }
+        public string BusinessLostNotes { get; set; }
+        public int? SalesQuoteCurrencyID { get; set; }
+        public string SalesQuoteCurrency { get; set; }
+        public int? OfficeID { get; set; }
+        public string SalesQuoteStatus { get; set; }
+        public string SalesQuoteType { get; set; }
+        public string Modeoftransport { get; set; }
+        public string Direction { get; set; }
+        public string TermsConditions { get; set; }
+    }
+}
