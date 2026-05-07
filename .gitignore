@@ -1,0 +1,16 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+publish/
+
+# User/IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS files
+.DS_Store
+
+# Logs
+*.log

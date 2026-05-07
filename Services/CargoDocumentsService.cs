@@ -16,4 +16,9 @@ public class CargoDocumentsService : ICargoDocumentsService
     {
         return await _repository.GetByCargoIdAsync(cargoId);
     }
+
+    public async Task<CargoDocuments?> GetByIdAsync(int cargoDocumentId)
+    {
+        return await _repository.GetByIdAsync(cargoDocumentId);
+    }
 }

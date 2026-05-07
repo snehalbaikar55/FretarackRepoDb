@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FluentFTP" Version="40.0.6" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.10" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.0" />
     <PackageReference Include="RepoDb" Version="1.13.1" />
@@ -25,6 +26,7 @@
     <Compile Include="Models/CostSheet.cs" />
     <Compile Include="Models/Invoices.cs" />
     <Compile Include="Models/CargoMintCostSheetCharge.cs" />
+    <Compile Include="Models/CargoMintSalesQuoteCharge.cs" />
     <Compile Include="Models/OceanShipmentRouting.cs" />
     <Compile Include="Models/VendorBill.cs" />
     <Compile Include="Models/AllCargoList.cs" />
@@ -41,6 +43,14 @@
     <Compile Include="Models/CargoCAN.cs" />
     <Compile Include="Models/CargoEntities.cs" />
     <Compile Include="Models/vw_CargoMint_CargoDetails.cs" />
+    <Compile Include="Models/VendorBillLineItems.cs" />
+    <Compile Include="Models/InvoiceLineItems.cs" />
+    <Compile Include="Models/SalesQuoteList.cs" />
+    <Compile Include="Models/vw_cargoMint_salesQuote_Detail.cs" />
+    <Compile Include="Models/SalesQuote_New.cs" />
+    <Compile Include="Models/SalesQuoteDetails_New.cs" />
+    <Compile Include="Models/SalesQuoteNomDetails.cs" />
+    <Compile Include="Models/SalesQuoteCharges_New.cs" />
   </ItemGroup>
 
 </Project>

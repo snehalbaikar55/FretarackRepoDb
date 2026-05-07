@@ -59,6 +59,23 @@ public class AllCargoListRepository : IAllCargoListRepository
                     toDateExclusive = maxToDateExclusive;
                 }
             }
+            else if (normalizedJob is not null)
+            {
+                // Job filter without dates: do not apply any date filter.
+                fromDate = null;
+                toDateExclusive = null;
+                _logger.LogInformation("Applying Job filter without date range for AllCargoList.");
+            }
+            else if (normalizedCycle is not null)
+            {
+                // Cycle filter without dates: limit to last 30 days up to today.
+                fromDate = DateTime.Today.AddDays(-30);
+                toDateExclusive = DateTime.Today.AddDays(1);
+                _logger.LogInformation(
+                    "Applying Cycle filter with default last-30-days range for AllCargoList: {FromDate} - {ToDateExclusive}.",
+                    fromDate,
+                    toDateExclusive);
+            }
             else
             {
                 // If no date filters supplied, apply a conservative default range (current month)
