@@ -3,6 +3,9 @@
 [Oo]bj/
 publish/
 
+# Sensitive local config
+appsettings.json
+
 # User/IDE files
 .vs/
 .vscode/
