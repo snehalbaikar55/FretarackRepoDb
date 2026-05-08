@@ -47,7 +47,7 @@ public class SalesQuoteListRepository : ISalesQuoteListRepository
             return await connection.ExecuteQueryAsync<SalesQuoteList>(
                 @"SELECT
                 sq.[SalesQuoteID],
-                    sq.[salesquotetype] + ' ' + sq.[Direction] AS [QuoteType],
+                    sq.[salesquotetype]  AS [QuoteType],
                     sq.[SalesQuoteNumber],
                     sq.[EnqReceivedDate],
                     sq.[SalesQuoteDate] AS [QuoteSentOn],
@@ -110,6 +110,7 @@ public class SalesQuoteListRepository : ISalesQuoteListRepository
                                 v.SalesPersonDisplayName,
                                 v.Customer,
                                 v.Contact,
+                                v.EmailCC,
                                 v.GrossWeight,
                                 v.Volume,
                                 v.Commodity,

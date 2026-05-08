@@ -10,6 +10,7 @@ namespace GeneratedModels
         public string? SalesPersonDisplayName { get; set; }
         public string? Customer { get; set; }
         public string? Contact { get; set; }
+        public string? EmailCC { get; set; }
         public decimal? GrossWeight { get; set; }
         public decimal? Volume { get; set; }
         public string? Commodity { get; set; }
