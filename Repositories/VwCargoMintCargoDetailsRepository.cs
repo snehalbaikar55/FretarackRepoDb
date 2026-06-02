@@ -26,7 +26,6 @@ public class VwCargoMintCargoDetailsRepository : IVwCargoMintCargoDetailsReposit
                         v.InvoiceNumbers,
                         v.shipperInvoiceDetails,
                         v.OverseasAgent,
-                        v.JobNo,
                         v.DateCreated,
                         v.JobType,
                         v.isGstJob,
@@ -40,11 +39,12 @@ public class VwCargoMintCargoDetailsRepository : IVwCargoMintCargoDetailsReposit
                         v.IncotermName,
                         v.FreightStatus,
                         v.[Job Handle By] AS JobHandleBy,
+                        v.[SalesPerson] AS SalesPersonName,
                         v.[Place Of Receipt] AS PlaceOfReceipt,
-                        v.CarrierName
+                        v.CarrierName,
+                        v.CargoId
                   FROM [vw_CargoMint_CargoDetails] v
-                  JOIN [cargo] c ON c.[JobNo] = v.[JobNo]
-                  WHERE c.[CargoID] = @cargoId",
+                  WHERE v.[CargoId] = @cargoId",
                 new { cargoId });
         }
         catch (Exception ex)

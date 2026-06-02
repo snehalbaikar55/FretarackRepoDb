@@ -5,8 +5,7 @@ namespace GeneratedModels
         public string InvoiceNumbers { get; set; }
         public string shipperInvoiceDetails { get; set; }
         public string OverseasAgent { get; set; }
-        public string JobNo { get; set; }
-        public DateTime? DateCreated { get; set; }
+               public DateTime? DateCreated { get; set; }
         public string JobType { get; set; }
         public int? isGstJob { get; set; }
         public string ModeOfTransport { get; set; }
@@ -19,6 +18,7 @@ namespace GeneratedModels
         public string IncotermName { get; set; }
         public string FreightStatus { get; set; }
         public string JobHandleBy { get; set; }
+        public string SalesPersonName { get; set; }
         public string PlaceOfReceipt { get; set; }
         public string CarrierName { get; set; }
         public int? CargoId { get; set; }

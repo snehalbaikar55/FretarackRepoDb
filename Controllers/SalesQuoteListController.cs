@@ -121,7 +121,7 @@ public class SalesQuoteListController : ControllerBase
             return BadRequest("Query parameter 'path' is required.");
 
         byte[]? fileBytes = null;
-        var ftpLink = path.Trim();
+        var ftpLink = path.Trim().Trim('\'', '"');
         var fileName = Path.GetFileName(ftpLink);
         var contentType = GetContentTypeFromExtension(Path.GetExtension(fileName));
 
@@ -183,7 +183,18 @@ public class SalesQuoteListController : ControllerBase
         if (string.IsNullOrWhiteSpace(ftpUrl))
             return Array.Empty<byte>();
 
-        var uri = new Uri(ftpUrl);
+        var normalizedFtpUrl = NormalizeFtpUrl(ftpUrl);
+        Uri uri;
+        try
+        {
+            uri = new Uri(normalizedFtpUrl);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Invalid FTP URL. Original={OriginalUrl}, Normalized={NormalizedUrl}", ftpUrl, normalizedFtpUrl);
+            return Array.Empty<byte>();
+        }
+
         var passiveOptions = new[] { true, false };
         foreach (var passive in passiveOptions)
         {
@@ -205,19 +216,43 @@ public class SalesQuoteListController : ControllerBase
 
                 using var ms = new MemoryStream();
                 responseStream.CopyTo(ms);
-                logger.LogInformation("Downloaded {Bytes} bytes from {Url} (Passive={Passive})", ms.Length, ftpUrl, passive);
+                logger.LogInformation("Downloaded {Bytes} bytes from {Url} (Passive={Passive})", ms.Length, normalizedFtpUrl, passive);
                 return ms.ToArray();
             }
             catch (WebException wex)
             {
-                logger.LogWarning(wex, "FTP download failed for {Url} with passive={Passive}. Status={Status}", ftpUrl, passive, wex.Status);
+                logger.LogWarning(wex, "FTP download failed for {Url} (Original={OriginalUrl}) with passive={Passive}. Status={Status}", normalizedFtpUrl, ftpUrl, passive, wex.Status);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "FTP download unexpected error for {Url} (passive={Passive})", ftpUrl, passive);
+                logger.LogWarning(ex, "FTP download unexpected error for {Url} (Original={OriginalUrl}, passive={Passive})", normalizedFtpUrl, ftpUrl, passive);
             }
         }
 
         return Array.Empty<byte>();
+    }
+
+    private static string NormalizeFtpUrl(string ftpUrl)
+    {
+        if (string.IsNullOrWhiteSpace(ftpUrl))
+            return ftpUrl;
+
+        var input = ftpUrl.Trim().Trim('\'', '"').Replace("\\", "/");
+        const string ftpPrefix = "ftp://";
+        if (!input.StartsWith(ftpPrefix, StringComparison.OrdinalIgnoreCase))
+            return input;
+
+        var withoutScheme = input.Substring(ftpPrefix.Length);
+        var firstSlash = withoutScheme.IndexOf('/');
+        if (firstSlash < 0)
+            return ftpPrefix + withoutScheme;
+
+        var host = withoutScheme.Substring(0, firstSlash);
+        var path = withoutScheme.Substring(firstSlash);
+
+        while (path.Contains("//", StringComparison.Ordinal))
+            path = path.Replace("//", "/", StringComparison.Ordinal);
+
+        return ftpPrefix + host + path;
     }
 }

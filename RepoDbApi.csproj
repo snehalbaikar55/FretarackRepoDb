@@ -51,6 +51,7 @@
     <Compile Include="Models/SalesQuoteDetails_New.cs" />
     <Compile Include="Models/SalesQuoteNomDetails.cs" />
     <Compile Include="Models/SalesQuoteCharges_New.cs" />
+    <Compile Include="Models/IncomeExpenseStatus.cs" />
   </ItemGroup>
 
 </Project>

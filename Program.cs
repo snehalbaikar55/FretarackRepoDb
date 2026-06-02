@@ -82,6 +82,8 @@ builder.Services.AddScoped<ICargoCANRepository, CargoCANRepository>();
 builder.Services.AddScoped<ICargoCANService, CargoCANService>();
 builder.Services.AddScoped<ICargoEntitiesRepository, CargoEntitiesRepository>();
 builder.Services.AddScoped<ICargoEntitiesService, CargoEntitiesService>();
+builder.Services.AddScoped<IIncomeExpenseStatusRepository, IncomeExpenseStatusRepository>();
+builder.Services.AddScoped<IIncomeExpenseStatusService, IncomeExpenseStatusService>();
 
 var app = builder.Build();
 
