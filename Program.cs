@@ -26,6 +26,8 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddScoped<ICargoRepository, CargoRepository>();
 builder.Services.AddScoped<ICargoService, CargoService>();
+builder.Services.AddScoped<ICargoMigrationRepository, CargoMigrationRepository>();
+builder.Services.AddScoped<ICargoMigrationService, CargoMigrationService>();
 builder.Services.AddScoped<IAllCargoListRepository, AllCargoListRepository>();
 builder.Services.AddScoped<IAllCargoListService, AllCargoListService>();
 builder.Services.AddScoped<ICargoRelatedDataRepository, CargoRelatedDataRepository>();
