@@ -1,6 +1,7 @@
 using RepoDb;
 using RepoDbApi.Repositories;
 using RepoDbApi.Services;
+using RepoDbApi.Services.CargoDocumentMigration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +29,8 @@ builder.Services.AddScoped<ICargoRepository, CargoRepository>();
 builder.Services.AddScoped<ICargoService, CargoService>();
 builder.Services.AddScoped<ICargoMigrationRepository, CargoMigrationRepository>();
 builder.Services.AddScoped<ICargoMigrationService, CargoMigrationService>();
+builder.Services.AddScoped<ICargoDocumentMigrationRepository, CargoDocumentMigrationRepository>();
+builder.Services.AddScoped<ICargoDocumentMigrationService, CargoDocumentMigrationService>();
 builder.Services.AddScoped<IAllCargoListRepository, AllCargoListRepository>();
 builder.Services.AddScoped<IAllCargoListService, AllCargoListService>();
 builder.Services.AddScoped<ICargoRelatedDataRepository, CargoRelatedDataRepository>();
@@ -89,7 +92,10 @@ builder.Services.AddScoped<IIncomeExpenseStatusService, IncomeExpenseStatusServi
 
 var app = builder.Build();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors(LocalAngularCorsPolicy);
 

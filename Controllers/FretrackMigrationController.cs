@@ -32,7 +32,8 @@ public class FretrackMigrationController : ControllerBase
 
         try
         {
-            var result = await _service.MigrateSingleJobAsync(request.JobNo.Trim(), cancellationToken);
+            const int orgId = 18;
+            var result = await _service.MigrateSingleJobAsync(request.JobNo.Trim(), orgId, cancellationToken);
             return Ok(result);
         }
         catch (KeyNotFoundException ex)
@@ -62,6 +63,49 @@ public class FretrackMigrationController : ControllerBase
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
                 "An error occurred while migrating single cargo.");
+        }
+    }
+
+    [HttpPost("container-only")]
+    public async Task<IActionResult> MigrateContainerOnly([FromBody] CargoMigrationRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.JobNo))
+        {
+            return BadRequest("JobNo is required.");
+        }
+
+        try
+        {
+            var result = await _service.MigrateContainerOnlyAsync(request.JobNo.Trim(), cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Cargo record not found for JobNo: {JobNo}", request.JobNo);
+            return NotFound(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, "Migration setup error for JobNo: {JobNo}", request.JobNo);
+            return Problem(
+                title: "Migration configuration error.",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stage container only for JobNo: {JobNo}", request.JobNo);
+            if (_hostEnvironment.IsDevelopment())
+            {
+                return Problem(
+                    title: "Failed to stage container only.",
+                    detail: ex.Message,
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                "An error occurred while staging container only.");
         }
     }
 }

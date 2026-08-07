@@ -8,6 +8,8 @@ The API migrates one job at a time from Fretrack into CargoMint staging.
 
 It does not write to CargoMint main tables. It only populates staging tables.
 
+The latest editable copy of the stored procedure is kept at `sql/usp_MigrateSingleCargoFromStaging.latest.sql`.
+
 ## API
 
 `POST /api/fretrack-migration/single-job`
@@ -30,9 +32,38 @@ It does not write to CargoMint main tables. It only populates staging tables.
 6. Map Fretrack source columns to CargoMint staging columns using explicit SQL aliases.
 7. Delete any existing staging rows for the same cargo so the API can be rerun safely.
 8. Insert data into CargoMint staging tables inside one transaction.
+   Every staging table projection now includes `OrgId`, and the API passes the same `OrgId` value to each staging query.
 9. Commit staging inserts.
 10. Call the CargoMint stored procedure `dbo.usp_MigrateSingleCargoFromStaging` to update staging rows and insert actual tables.
-11. Return the inserted row counts per staging table.
+11. After the procedure completes, run cargo-document migration for the same `CargoID` so the actual `Documents` table is populated and `Fretrack_CargoDocuments_Staging.CargoMintDocumentID` is backfilled for that cargo only:
+
+```sql
+UPDATE s
+SET s.CargoMintDocumentID = d.DocId
+FROM dbo.Fretrack_CargoDocuments_Staging s
+JOIN dbo.Documents d
+    ON d.FretrackDocumentID = s.FretrackCargoDocumentID
+WHERE s.CargoMintDocumentID IS NULL
+  AND s.CargoID = @CargoID;
+```
+
+The document insert path now writes:
+
+- `DocFilePath`, `DocumentFTPLink`, and `DocumentLocalLink` as the CargoMint view URL
+- `BlobName` as `FretrackDocuments/{fileName}`
+- `DocTitle` as the clean file name
+- `DocDescription` as the clean file name
+- `DocFileType` from the file extension on `DocDescription`
+- `EntityType` as `Shipment`
+- `EntityId` from `CargoMintShipmentID`
+- `FretrackCargoId` when the target table exposes that column
+- The CargoMint-resolved ID columns in the staging load are intentionally left `NULL` where the stored procedure now resolves them from the raw Fretrack values.
+
+If a `Documents` row already exists for the same cargo document, the migration updates that row with the refreshed metadata and Azure view URL instead of leaving the document-specific fields null.
+
+The cargo-document insert path also guarantees a non-null `DocTitle` value by using the uploaded filename as the final source.
+
+12. Return the inserted row counts per staging table.
 
 ## Source Lookup
 
@@ -67,6 +98,8 @@ The API inserts data into these tables:
 - `dbo.Fretrack_HBL_Staging`
 - `dbo.Fretrack_CargoDocuments_Staging`
 
+All staging tables above include `OrgId` in the inserted projection.
+
 ## Column Mapping Rules
 
 All source-to-staging name differences are handled with explicit SQL aliases or explicit column mapping in code.
@@ -80,6 +113,11 @@ All source-to-staging name differences are handled with explicit SQL aliases or 
 - `CargoPackTypeID` -> `FretrackPackTypeID`
 - `CargoID` -> `FretrackCargoId`
 - `CargoPackID` -> `FretrackPackId`
+
+### 2a. `Fretrack_ShipmentService_Staging`
+
+- `CargoID` -> `FretrackCargoId`
+- The staging query does not require a `JobTypeMaster` match anymore; rows are loaded even when Fretrack `JobType` has no lookup value.
 
 ### 3. `Fretrack_ShipmentContainers_Staging`
 
@@ -97,6 +135,8 @@ All source-to-staging name differences are handled with explicit SQL aliases or 
 - `CompanyID` -> `FretrackCompanyId`
 - `CargoEntityID` -> `FretrackCargoEntityID`
 - `EntityAddressID` -> `FretrackEntityAddressID`
+- `CompanyAddressId` is validated against `dbo.CompanyAddress` before `ShipmentParties` insert; invalid values are cleared to avoid FK failures.
+- The CargoMint foreign-key helper columns for this staging table are now left `NULL` during the bulk copy step because the stored procedure resolves them later.
 
 ### 6. `Fretrack_Invoices_Staging`
 
@@ -224,3 +264,4 @@ The API returns:
 - The API is intended for one job per call.
 - If CargoMint already has the cargo record, the existing staging rows are deleted first and then reinserted.
 - After staging is committed, the API calls the CargoMint stored procedure to update staging rows and insert actual tables.
+- The cargo document migration runs after the stored procedure call for the same `CargoID`, and the staging backfill is scoped to that cargo only.
