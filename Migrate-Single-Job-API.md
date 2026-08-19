@@ -14,6 +14,63 @@ This document describes the single-job Fretrack migration API that stages one ca
 - Insert those rows into CargoMint staging tables
 - Call the CargoMint stored procedure to move data from staging into actual tables
 
+## Zoho Bill Lookup Flow
+
+The API now uses one Zoho bill endpoint for both direct bill lookup and job-based lookup.
+
+### Endpoint
+
+`GET /api/vendor-bills/getBillFromZoho?billNumber={billNumber}`
+
+or
+
+`GET /api/vendor-bills/getBillFromZoho?jobNo={jobNo}`
+
+### Flow
+
+1. If `billNumber` is passed, call Zoho Books directly and return the raw bill response.
+2. If `jobNo` is passed, resolve `CargoID` from the Fretrack `Cargo` table.
+3. Read the related vendor bill numbers from the Fretrack `VendorBill` table for that cargo.
+4. Call the same Zoho Books bill endpoint for each bill number.
+5. Return the aggregated Zoho bill responses.
+
+### Example
+
+If the vendor bill table returns:
+
+```json
+{
+  "cargo_id": 280387,
+  "bill_numbers": [
+    "EXP/20-21/0575",
+    "LS-049 _21-22",
+    "FI212745-1"
+  ]
+}
+```
+
+the API can use those bill numbers to fetch the matching bill data from Zoho Books.
+
+## Zoho Invoice Lookup Flow
+
+The API now uses one Zoho invoice endpoint for both direct invoice lookup and job-based lookup.
+
+### Endpoint
+
+`GET /api/vendor-bills/getInvoiceFromZoho?invoiceNumber={invoiceNumber}`
+
+or
+
+`GET /api/vendor-bills/getInvoiceFromZoho?jobNo={jobNo}`
+
+### Flow
+
+1. If `invoiceNumber` is passed, call Zoho Books directly and return the raw invoice response.
+2. If `jobNo` is passed, resolve `CargoID` from the Fretrack `Cargo` table.
+3. Read the related invoice numbers from the Fretrack `Invoices` table for that cargo.
+4. Call the same Zoho Books invoice endpoint for each invoice number.
+5. Return the aggregated Zoho invoice responses.
+
 ## Connections
 
 - Source database: `DefaultConnection`
@@ -29,7 +86,7 @@ This document describes the single-job Fretrack migration API that stages one ca
 
 ## Response
 
-The API returns a migration summary similar to:
+On success, the API returns a migration summary similar to:
 
 ```json
 {
@@ -46,21 +103,37 @@ The API returns a migration summary similar to:
 }
 ```
 
+On failure, the API now returns the same response shape with `status: "failed"` and a clear `message` so the caller can see where the problem happened:
+
+```json
+{
+  "jobNo": "PAE260012",
+  "cargoId": 0,
+  "cargoExistsInCargoMint": false,
+  "actualMigrationCompleted": false,
+  "status": "failed",
+  "message": "Zoho bill fetch failed for JobNo 'PAE260012' with HTTP 500: <error response>",
+  "stagingCounts": {}
+}
+```
+
 ## Flow
 
 1. Read `JobNo` from the request.
 2. Look up the cargo in Fretrack using `JobNo`.
-3. Read `CargoID` from the Fretrack cargo row.
-4. Check whether the cargo already exists in CargoMint.
-5. Resolve source and target schemas dynamically.
-6. Remove any existing staging rows for the same `CargoID`.
-7. Insert the Fretrack cargo header row into `Fretrack_Cargo_Staging`.
-8. Insert related rows into the other staging tables.
-9. Validate CargoMint foreign-key references before bulk insert where needed.
-10. Commit the staging load in one transaction.
-11. Call `dbo.usp_MigrateSingleCargoFromStaging`.
-12. After the procedure completes, run cargo-document migration for the same `CargoID` so the actual `Documents` table is populated and `Fretrack_CargoDocuments_Staging.CargoMintDocumentID` is updated for that cargo only.
-13. Return row counts and status.
+3. Call the Zoho bill and invoice lookup APIs using the same `JobNo`.
+4. Upsert the returned Zoho data into the GST mapping tables.
+5. Read `CargoID` from the Fretrack cargo row.
+6. Check whether the cargo already exists in CargoMint.
+7. Resolve source and target schemas dynamically.
+8. Remove any existing staging rows for the same `CargoID`.
+9. Insert the Fretrack cargo header row into `Fretrack_Cargo_Staging`.
+10. Insert related rows into the other staging tables.
+11. Validate CargoMint foreign-key references before bulk insert where needed.
+12. Commit the staging load in one transaction.
+13. Call `dbo.usp_MigrateSingleCargoFromStaging`.
+14. After the procedure completes, run cargo-document migration for the same `CargoID` so the actual `Documents` table is populated and `Fretrack_CargoDocuments_Staging.CargoMintDocumentID` is updated for that cargo only.
+15. Return row counts and status.
 
 The cargo-document insert path now writes:
 
@@ -74,6 +147,8 @@ The cargo-document insert path now writes:
 - `FretrackCargoId` when the target table exposes that column
 
 If the document already exists in `Documents`, the migration now updates the existing row with the same metadata instead of leaving `DocFileType`, `EntityType`, or `EntityId` null.
+
+For bill documents (`DocTypeId = 8`), the migration also backfills matching `Bills` rows for the same shipment by setting `DocumentId` and `DocumentPath` when the bill invoice number appears in `DocDescription`.
 
 The cargo-document insert path also guarantees a non-null `DocTitle` by using the uploaded filename as the final source.
 
@@ -131,6 +206,8 @@ Common failures include:
 - Missing or mismatched source column names
 - Missing target foreign-key references in CargoMint
 - Transaction or stored procedure errors
+
+When a failure happens, the API returns the underlying exception message instead of a generic `An error occurred while migrating single cargo` response. That makes it easier to tell whether the issue was in Zoho lookup, source data, staging, or the stored procedure.
 
 ## When to Use
 

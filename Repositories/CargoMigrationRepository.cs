@@ -49,7 +49,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
         string? cargoMintCargoSchema = null;
         try
         {
-            cargoMintCargoSchema = await ResolveTableSchemaAsync(targetConnection, "Cargo", cancellationToken, defaultSchema: "dbo");
+            cargoMintCargoSchema = await ResolveTableSchemaAsync(targetConnection, "Cargo", cancellationToken, defaultSchema: string.Empty);
         }
         catch (KeyNotFoundException ex)
         {
@@ -59,7 +59,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
         string? usersSchema = null;
         try
         {
-            usersSchema = await ResolveTableSchemaAsync(targetConnection, "Users", cancellationToken, defaultSchema: "dbo");
+            usersSchema = await ResolveTableSchemaAsync(targetConnection, "Users", cancellationToken, defaultSchema: string.Empty);
         }
         catch (KeyNotFoundException ex)
         {
@@ -84,7 +84,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
         string? salesQuotationSchema = null;
         try
         {
-            salesQuotationSchema = await ResolveTableSchemaAsync(targetConnection, "SalesQuotations", cancellationToken, defaultSchema: "dbo");
+            salesQuotationSchema = await ResolveTableSchemaAsync(targetConnection, "SalesQuotations", cancellationToken, defaultSchema: string.Empty);
         }
         catch (KeyNotFoundException ex)
         {
@@ -567,6 +567,12 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             destinationTableName,
             cancellationToken,
             transaction);
+        var writableDestinationColumns = await LoadWritableTableColumnsAsync(
+            targetConnection,
+            destinationSchema,
+            destinationTableName,
+            cancellationToken,
+            transaction);
 
         NormalizeDataTableForBulkCopy(table, destinationColumnTypes);
 
@@ -592,6 +598,15 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             {
                 _logger.LogWarning(
                     "Skipping source column '{ColumnName}' because destination table {DestinationTable} does not contain it.",
+                    column.ColumnName,
+                    destinationTableName);
+                continue;
+            }
+
+            if (!writableDestinationColumns.Contains(column.ColumnName))
+            {
+                _logger.LogWarning(
+                    "Skipping read-only destination column '{ColumnName}' for table {DestinationTable}.",
                     column.ColumnName,
                     destinationTableName);
                 continue;
@@ -937,6 +952,39 @@ WHERE TABLE_SCHEMA = @SchemaName
         return columns;
     }
 
+    private async Task<HashSet<string>> LoadWritableTableColumnsAsync(
+        SqlConnection connection,
+        string schema,
+        string tableName,
+        CancellationToken cancellationToken,
+        SqlTransaction? transaction = null)
+    {
+        using var command = new SqlCommand(@"
+SELECT c.name
+FROM sys.columns c
+INNER JOIN sys.objects o ON o.object_id = c.object_id
+INNER JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE s.name = @SchemaName
+  AND o.name = @TableName
+  AND c.is_identity = 0
+  AND c.is_computed = 0;", connection);
+        command.Transaction = transaction;
+        command.CommandTimeout = _commandTimeoutSeconds;
+
+        command.Parameters.Add(new SqlParameter("@SchemaName", SqlDbType.NVarChar, 128) { Value = schema });
+        command.Parameters.Add(new SqlParameter("@TableName", SqlDbType.NVarChar, 128) { Value = tableName });
+
+        using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            columns.Add(reader.GetString(0));
+        }
+
+        return columns;
+    }
+
     private async Task<string> ResolveTableSchemaAsync(
         SqlConnection connection,
         string tableName,
@@ -990,7 +1038,8 @@ SELECT
     c.CargoID,
     c.JobNo
 FROM [{schema}].[Cargo] c
-WHERE c.JobNo = @JobNo;";
+    WHERE c.JobNo = @JobNo
+      AND ISNULL(c.isDeleted, 0) = 0;";
     }
 
     private static string BuildContainerOnlyShipmentContainersSql(string schema)
@@ -1121,7 +1170,8 @@ LEFT JOIN [{schema}].[Opportunities] o
     ON c.OpportunityID = o.OpportunityID
 LEFT JOIN [{schema}].[CargoDetails] cd
     ON c.CargoID = cd.CargoID
-WHERE c.JobNo = @JobNo;";
+    WHERE c.JobNo = @JobNo
+      AND ISNULL(c.isDeleted, 0) = 0;";
     }
 
     private static string QualifySourceTables(string schema, string sql)
@@ -1193,7 +1243,8 @@ LEFT JOIN AirShipmentRouting ar
     ON c.CargoID = ar.ShipmentID
 LEFT JOIN OceanShipmentRouting orr
     ON c.CargoID = orr.ShipmentID
-WHERE c.CargoID = @CargoID;";
+    WHERE c.CargoID = @CargoID
+      AND ISNULL(c.isDeleted, 0) = 0;";
 
 private const string ShipmentPackagesSql = @"
 SELECT
@@ -1237,7 +1288,8 @@ SELECT
     p.CargoID AS FretrackCargoId,
     p.CargoPackID AS FretrackPackId
 FROM CargoPackages p
-WHERE p.CargoID = @CargoID;";
+    WHERE p.CargoID = @CargoID
+      AND ISNULL(p.isDeleted, 0) = 0;";
 
 private const string ShipmentContainersSql = @"
 SELECT
@@ -1261,7 +1313,8 @@ SELECT
     p.ModifiedBy,
     p.DateModified
 FROM CargoContainers p
-WHERE p.CargoID = @CargoID;";
+    WHERE p.CargoID = @CargoID
+      AND ISNULL(p.isDeleted, 0) = 0;";
 
 private const string ShipmentRoutingSql = @"
 SELECT
@@ -1298,7 +1351,9 @@ INNER JOIN OceanShipmentRouting osr
     ON c.CargoID = osr.ShipmentID
 INNER JOIN JobTypeMaster j
     ON c.JobType = j.JOBTypeID
-WHERE c.CargoID = @CargoID
+    WHERE c.CargoID = @CargoID
+      AND ISNULL(c.isDeleted, 0) = 0
+      AND ISNULL(osr.IsDeleted, 0) = 0
 UNION ALL
 SELECT
     @OrgId AS OrgId,
@@ -1334,7 +1389,9 @@ INNER JOIN AirShipmentRouting asr
     ON c.CargoID = asr.ShipmentID
 INNER JOIN JobTypeMaster j
     ON c.JobType = j.JOBTypeID
-WHERE c.CargoID = @CargoID;";
+    WHERE c.CargoID = @CargoID
+      AND ISNULL(c.isDeleted, 0) = 0
+      AND ISNULL(asr.IsDeleted, 0) = 0;";
 
 private const string CargoEntitiesSql = @"
 SELECT
@@ -1377,7 +1434,8 @@ SELECT
     CAST(NULL AS INT) AS CargoMintStateID,
     CAST(NULL AS INT) AS CargoMintCountryID
 FROM CargoEntities ce
-WHERE ce.CargoID = @CargoID;";
+    WHERE ce.CargoID = @CargoID
+      AND ISNULL(ce.isDeleted, 0) = 0;";
 
 private const string InvoicesSql = @"
 SELECT
@@ -1436,7 +1494,8 @@ SELECT
     CAST(NULL AS INT) AS CostSheetID,
     i.InvoiceTypeGST AS invoiceTypeGst
 FROM Invoices i
-WHERE i.CargoID = @CargoID;";
+    WHERE i.CargoID = @CargoID
+      AND ISNULL(i.isDeleted, 0) = 0;";
 
 private const string ShipmentChargesSql = @"
 SELECT
@@ -1503,7 +1562,7 @@ SELECT
     FretrackUpdatedBy = MAX(cc.ModifiedBy),
     FretrackUpdatedDate = MAX(cc.DateModified)
 FROM CargoCharges cc
-WHERE cc.CargoID = @CargoID
+WHERE cc.CargoID = @CargoID and cc.Isdeleted=0
 GROUP BY cc.CargoID, cc.ChargeItemID;";
 
     private const string InvoiceLineItemsSql = @"
@@ -1545,7 +1604,9 @@ SELECT
 FROM InvoiceLineItems invLines
 INNER JOIN Invoices inv
     ON inv.InvoiceID = invLines.InvoiceID
-WHERE inv.CargoID = @CargoID;";
+    WHERE inv.CargoID = @CargoID
+      AND ISNULL(invLines.isDeleted, 0) = 0
+      AND ISNULL(inv.isDeleted, 0) = 0;";
 
     private const string VendorBillLineItemsSql = @"
 SELECT
@@ -1586,7 +1647,9 @@ SELECT
 FROM VendorBillLineItems invitmbill
 INNER JOIN VendorBill bill
     ON invitmbill.VendorBillID = bill.VendorBillID
-WHERE bill.CargoID = @CargoID;";
+    WHERE bill.CargoID = @CargoID
+      AND ISNULL(invitmbill.isDeleted, 0) = 0
+      AND ISNULL(bill.isDeleted, 0) = 0;";
 
     private const string VendorBillSql = @"
 SELECT
@@ -1658,8 +1721,8 @@ SELECT
     CAST(NULL AS INT) AS PaymentTermId,
     @OrgId AS OrgId
 FROM VendorBill bill
-WHERE bill.IsDeleted = 0
-  AND bill.CargoID = @CargoID;";
+    WHERE ISNULL(bill.IsDeleted, 0) = 0
+      AND bill.CargoID = @CargoID;";
 
 private const string HblSql = @"
 SELECT
@@ -1713,7 +1776,8 @@ SELECT
     DateModified,
     isDeleted
 FROM CargoHBL
-WHERE CargoID = @CargoID;";
+    WHERE CargoID = @CargoID
+      AND ISNULL(isDeleted, 0) = 0;";
 
 private const string CargoDocumentsSql = @"
 SELECT

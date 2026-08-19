@@ -345,6 +345,15 @@ ORDER BY s.[{docIdColumn}];",
                 "Already imported and Azure path synchronized",
                 cancellationToken);
 
+            await UpdateMatchingBillDocumentAsync(
+                connection,
+                transaction,
+                documentsSchema,
+                entityId,
+                existingDocumentId.Value,
+                docTypeId,
+                cancellationToken);
+
             _logger.LogInformation(
                 "Cargo document synchronized for CargoID {CargoId} and FretrackCargoDocumentID {FretrackCargoDocumentId}. DocId={DocumentId}, BlobUrl={BlobUrl}.",
                 cargoId,
@@ -382,6 +391,15 @@ ORDER BY s.[{docIdColumn}];",
             fretrackCargoDocumentId,
             documentId,
             "Imported successfully",
+            cancellationToken);
+
+        await UpdateMatchingBillDocumentAsync(
+            connection,
+            transaction,
+            documentsSchema,
+            entityId,
+            documentId,
+            docTypeId,
             cancellationToken);
 
         _logger.LogInformation(
@@ -755,6 +773,85 @@ WHERE [{idColumn}] = @DocumentId;", connection, transaction);
         command.Parameters.Add(new SqlParameter("@EntityType", SqlDbType.NVarChar, 100) { Value = "Shipment" });
         command.Parameters.Add(new SqlParameter("@EntityId", SqlDbType.Int) { Value = (object?)entityId ?? DBNull.Value });
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task UpdateMatchingBillDocumentAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string documentsSchema,
+        int? shipmentId,
+        int documentId,
+        int? docTypeId,
+        CancellationToken cancellationToken)
+    {
+        if (!shipmentId.HasValue || docTypeId != 8)
+        {
+            return;
+        }
+
+        try
+        {
+            var billsSchema = await ResolveTableSchemaAsync(connection, "Bills", cancellationToken, transaction);
+            var documentsColumns = await LoadTableColumnsAsync(connection, documentsSchema, "Documents", cancellationToken, transaction);
+            var billsColumns = await LoadTableColumnsAsync(connection, billsSchema, "Bills", cancellationToken, transaction);
+
+            var documentIdColumn = ResolveFirstColumn(documentsColumns, "DocId", "DocumentID", "CargoDocumentID");
+            var documentPathColumn = ResolveFirstColumn(documentsColumns, "DocFilePath");
+            var documentDescriptionColumn = ResolveFirstColumn(documentsColumns, "DocDescription");
+            var documentTypeColumn = ResolveFirstColumn(documentsColumns, "DocTypeId");
+            var documentEntityTypeColumn = ResolveFirstColumn(documentsColumns, "EntityType");
+            var documentEntityIdColumn = ResolveFirstColumn(documentsColumns, "EntityId");
+
+            var billDocumentIdColumn = ResolveFirstColumn(billsColumns, "DocumentId");
+            var billDocumentPathColumn = ResolveFirstColumn(billsColumns, "DocumentPath");
+            var billShipmentIdColumn = ResolveFirstColumn(billsColumns, "ShipmentId");
+            var billInvoiceNumberColumn = ResolveFirstColumn(billsColumns, "InvoiceNumber");
+
+            if (documentIdColumn is null
+                || documentPathColumn is null
+                || documentDescriptionColumn is null
+                || documentTypeColumn is null
+                || documentEntityTypeColumn is null
+                || documentEntityIdColumn is null
+                || billDocumentIdColumn is null
+                || billDocumentPathColumn is null
+                || billShipmentIdColumn is null
+                || billInvoiceNumberColumn is null)
+            {
+                return;
+            }
+
+            using var command = new SqlCommand($@"
+UPDATE b
+SET b.[{billDocumentIdColumn}] = d.[{documentIdColumn}],
+    b.[{billDocumentPathColumn}] = d.[{documentPathColumn}]
+FROM [{billsSchema}].[Bills] b
+INNER JOIN [{documentsSchema}].[Documents] d
+    ON d.[{documentEntityIdColumn}] = b.[{billShipmentIdColumn}]
+   AND d.[{documentEntityTypeColumn}] = 'Shipment'
+   AND d.[{documentTypeColumn}] = @BillDocTypeId
+   AND d.[{documentDescriptionColumn}] LIKE '%' + LTRIM(RTRIM(CAST(b.[{billInvoiceNumberColumn}] AS NVARCHAR(200)))) + '%'
+WHERE b.[{billShipmentIdColumn}] = @ShipmentId
+  AND NULLIF(LTRIM(RTRIM(CAST(b.[{billInvoiceNumberColumn}] AS NVARCHAR(200)))), '') IS NOT NULL
+  AND d.[{documentIdColumn}] = @DocumentId;", connection, transaction)
+            {
+                CommandTimeout = _commandTimeoutSeconds
+            };
+
+            command.Parameters.Add(new SqlParameter("@BillDocTypeId", SqlDbType.Int) { Value = 8 });
+            command.Parameters.Add(new SqlParameter("@ShipmentId", SqlDbType.Int) { Value = shipmentId.Value });
+            command.Parameters.Add(new SqlParameter("@DocumentId", SqlDbType.Int) { Value = documentId });
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Bills backfill skipped for ShipmentId {ShipmentId} and DocumentId {DocumentId} because the target schema could not be resolved.",
+                shipmentId,
+                documentId);
+        }
     }
 
     private async Task<UploadedDocumentAsset> UploadDocumentToAzureAsync(
