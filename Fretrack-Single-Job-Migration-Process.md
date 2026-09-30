@@ -91,6 +91,7 @@ The API inserts data into these tables:
 - `dbo.Fretrack_Shipment_Routing_Staging_New`
 - `dbo.Fretrack_CargoEntities_Staging`
 - `dbo.Fretrack_Invoices_Staging`
+- `dbo.Fretrack_InvoiceEsync_Staging`
 - `dbo.Fretrack_ShipmentCharges_Staging`
 - `dbo.Fretrack_InvoiceLineItems_Staging`
 - `dbo.Fretrack_VendorBill_Staging`
@@ -163,6 +164,12 @@ All source-to-staging name differences are handled with explicit SQL aliases or 
 - `NonTaxableAmount` -> `FretrackNonTaxableAmount`
 - `ExpectedAmount` -> `FretrackExpectedAmount`
 - `CreatedBy` -> `FretrackCreatedBy`
+
+### 7a. `Fretrack_InvoiceEsync_Staging`
+
+- `InvoiceID` -> `FretrackInvoiceID`
+- `CargoID` -> `FretrackCargoID`
+- The API loads `InvoiceESync` rows only for cargos whose job number matches the configured FL/AE/SE/AI/SI 26 patterns.
 
 ### 8. `Fretrack_VendorBillLineItems_Staging`
 

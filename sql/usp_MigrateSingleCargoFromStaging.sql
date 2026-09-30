@@ -1776,6 +1776,60 @@ BEGIN
              OR i.SourceOfSupply IS NULL
           );
 
+        /* =========================================================
+           12a. Invoice E-Sync staging + insert
+           ========================================================= */
+        UPDATE s
+        SET s.CargoMintInvoiceID = i.InvoiceId
+        FROM dbo.Fretrack_InvoiceEsync_Staging s
+        JOIN dbo.Invoices i
+            ON s.FretrackInvoiceID = i.FretrackInvoiceID
+        WHERE s.CargoID = @FretrackCargoId;
+
+        UPDATE s
+        SET s.CargoMintCreatedBy = u.Id
+        FROM dbo.Fretrack_InvoiceEsync_Staging s
+        JOIN dbo.Users u
+            ON s.FretrackSyncedBy = u.FretrackUserID
+        WHERE s.CargoID = @FretrackCargoId;
+
+        INSERT INTO dbo.InvoiceESync
+        (
+            OrgId,
+            InvoiceID,
+            InvoiceNumber,
+            AckNo,
+            AckDt,
+            IrnNo,
+            SignedInvoice,
+            SignedQRCode,
+            SyncedBy,
+            SyncDate,
+            SyncResponse
+        )
+        SELECT
+            @OrgId,
+            stg.CargoMintInvoiceID,
+            stg.FretrackInvoiceNumber,
+            stg.FretrackAckNo,
+            stg.FretrackAckDt,
+            stg.FretrackIrnNo,
+            stg.FretrackSignedInvoice,
+            stg.FretrackSignedQRCode,
+            stg.CargoMintCreatedBy,
+            ISNULL(stg.FretrackSyncDate, GETDATE()),
+            stg.FretrackSyncResponse
+        FROM dbo.Fretrack_InvoiceEsync_Staging stg
+        WHERE stg.CargoID = @FretrackCargoId
+          AND stg.CargoMintInvoiceID IS NOT NULL
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.InvoiceESync ies
+              WHERE ies.InvoiceID = stg.CargoMintInvoiceID
+                AND ISNULL(ies.IrnNo, '') = ISNULL(stg.FretrackIrnNo, '')
+          );
+
 
         /* =========================================================
            13. Invoice line items staging updates

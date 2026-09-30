@@ -142,7 +142,7 @@ BEGIN
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'M' THEN 22
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'C' THEN 23
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'P' THEN 24
-                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'B' THEN 4
+                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'B' THEN 29
                 ELSE s.BranchId
             END,
             s.CargoMintSalesPersonId,
@@ -193,7 +193,7 @@ BEGIN
                               WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'M' THEN 22
                               WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'C' THEN 23
                               WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'P' THEN 24
-                              WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'B' THEN 4
+                              WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'B' THEN 29
                               ELSE sh.BranchId
                           END,
             sh.SalesPersonId = s.CargoMintSalesPersonId,
@@ -226,7 +226,7 @@ BEGIN
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'M' THEN 22
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'C' THEN 23
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'P' THEN 24
-                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'B' THEN 4
+                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNo)), 1)) = 'B' THEN 29
                 ELSE s.BranchId
             END
         FROM dbo.Shipments s
@@ -256,14 +256,16 @@ BEGIN
         WHERE s.FretrackCargoId = @FretrackCargoId
           AND m.CargoMintTransportModeId IS NOT NULL;
 
-        UPDATE dbo.Fretrack_ShipmentService_Staging
+       UPDATE dbo.Fretrack_ShipmentService_Staging
         SET TransportDirectionId =
             CASE
-                WHEN UPPER(LTRIM(RTRIM(TransportDirection))) = 'EXPORT' THEN 1
-                WHEN UPPER(LTRIM(RTRIM(TransportDirection))) = 'IMPORT' THEN 2
-                WHEN UPPER(LTRIM(RTRIM(TransportDirection))) = 'DOMESTIC' THEN 3
-                WHEN UPPER(LTRIM(RTRIM(TransportDirection))) = 'THIRDCOUNTRY' THEN 4
-                ELSE NULL
+                WHEN UPPER(LTRIM(RTRIM(TransportMode))) = 'SURFACE' THEN 3
+                WHEN UPPER(LTRIM(RTRIM(TransportMode))) IN ('OCEAN', 'AIR')
+                    AND UPPER(LTRIM(RTRIM(TransportDirection))) = 'EXPORT' THEN 1
+                WHEN UPPER(LTRIM(RTRIM(TransportMode))) IN ('OCEAN', 'AIR')
+                    AND UPPER(LTRIM(RTRIM(TransportDirection))) = 'IMPORT' THEN 2
+            
+                ELSE TransportDirectionId
             END
         WHERE FretrackCargoId = @FretrackCargoId;
 
@@ -594,6 +596,21 @@ BEGIN
             ON sc.FretrackContainerID = s.FretrackContainerID
         WHERE s.FretrackCargoId = @FretrackCargoId;
 
+        UPDATE sc
+        SET
+            sc.IsDeleted = 1,
+            sc.DeletedDate = GETDATE()
+        FROM dbo.ShipmentContainers sc
+        WHERE sc.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_ShipmentContainers_Staging s
+              WHERE s.FretrackCargoId = @FretrackCargoId
+                AND s.FretrackContainerID = sc.FretrackContainerID
+                AND ISNULL(s.IsDeleted, 0) = 0
+          );
+
         /* =========================================================
            7. Package staging + insert
            ========================================================= */
@@ -760,6 +777,21 @@ BEGIN
         JOIN dbo.Fretrack_ShipmentPackages_Staging s
             ON p.FretrackPackageId = s.FretrackPackId
         WHERE s.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE p
+        SET
+            p.IsDeleted = 1,
+            p.DeletedDate = GETDATE()
+        FROM dbo.ShipmentPackages p
+        WHERE p.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_ShipmentPackages_Staging s
+              WHERE s.FretrackCargoID = @FretrackCargoId
+                AND s.FretrackPackId = p.FretrackPackageId
+                AND ISNULL(s.isDeleted, 0) = 0
+          );
 
         /* =========================================================
            8. Routing staging + insert
@@ -938,6 +970,21 @@ BEGIN
         JOIN dbo.Fretrack_Shipment_Routing_Staging_New s
             ON r.FretrackRoutingID = s.FretrackRoutingID
         WHERE s.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE r
+        SET
+            r.IsDeleted = 1,
+            r.DeletedDate = GETDATE()
+        FROM dbo.ShipmentRouting r
+        WHERE r.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_Shipment_Routing_Staging_New s
+              WHERE s.FretrackCargoID = @FretrackCargoId
+                AND s.FretrackRoutingID = r.FretrackRoutingID
+                AND ISNULL(s.IsDeleted, 0) = 0
+          );
 
         /* =========================================================
            9. Cargo entities staging + insert
@@ -1137,6 +1184,21 @@ BEGIN
         JOIN dbo.Fretrack_CargoEntities_Staging s
             ON sp.FretrackCargoEntityID = s.FretrackCargoEntityID
         WHERE s.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE sp
+        SET
+            sp.IsDeleted = 1,
+            sp.DeletedDate = GETDATE()
+        FROM dbo.ShipmentParties sp
+        WHERE sp.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_CargoEntities_Staging s
+              WHERE s.FretrackCargoID = @FretrackCargoId
+                AND s.FretrackCargoEntityID = sp.FretrackCargoEntityID
+                AND ISNULL(s.isDeleted, 0) = 0
+          );
 
 
         /* =========================================================
@@ -1424,6 +1486,30 @@ BEGIN
           AND s.CargomintShipmentServiceId IS NOT NULL
           AND s.CargomintChargeItemId IS NOT NULL
           AND ISNULL(sc.IsDeleted, 0) = 0;
+
+        UPDATE sc
+        SET
+            sc.IsDeleted = 1,
+            sc.DeletedDate = GETDATE()
+        FROM dbo.ShipmentCharges sc
+        WHERE EXISTS
+        (
+            SELECT 1
+            FROM dbo.Fretrack_ShipmentCharges_Staging s
+            WHERE s.FretrackCargoId = @FretrackCargoId
+              AND s.CargomintShipmentId = sc.ShipmentId
+              AND s.CargomintShipmentServiceId = sc.ShipmentServiceId
+        )
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_ShipmentCharges_Staging s
+              WHERE s.FretrackCargoId = @FretrackCargoId
+                AND s.CargomintShipmentId = sc.ShipmentId
+                AND s.CargomintShipmentServiceId = sc.ShipmentServiceId
+                AND s.CargomintChargeItemId = sc.ChargeItemId
+                AND ISNULL(s.FretrackLineNumber, 0) = ISNULL(sc.SortOrder, 0)
+          );
 
 
         /* =========================================================
@@ -1756,7 +1842,7 @@ BEGIN
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'M' THEN 22
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'C' THEN 23
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'P' THEN 24
-                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'B' THEN 4
+                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'B' THEN 29
                 ELSE i.BranchId
             END
         FROM dbo.Invoices i
@@ -1783,6 +1869,21 @@ BEGIN
         JOIN dbo.Fretrack_ZohoInvoicesForGSTMapping z
             ON LTRIM(RTRIM(i.InvoiceNumber)) = LTRIM(RTRIM(z.invoice_number))
         WHERE i.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE i
+        SET
+            i.IsDeleted = 1,
+            i.DeletedDate = GETDATE()
+        FROM dbo.Invoices i
+        WHERE i.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_Invoices_Staging s
+              WHERE s.FretrackCargoID = @FretrackCargoId
+                AND s.FretrackInvoiceID = i.FretrackInvoiceID
+                AND ISNULL(s.isDeleted, 0) = 0
+          );
 
          UPDATE i
         SET
@@ -2089,6 +2190,28 @@ BEGIN
         FROM dbo.Fretrack_InvoiceLineItems_Staging f
         WHERE f.FretrackCargoID = @FretrackCargoId;
 
+        UPDATE il
+        SET
+            il.IsDeleted = 1,
+            il.DeletedDate = GETDATE()
+        FROM dbo.InvoiceLineItems il
+        WHERE EXISTS
+        (
+            SELECT 1
+            FROM dbo.Invoices i
+            WHERE i.InvoiceId = il.InvoiceId
+              AND i.FretrackCargoID = @FretrackCargoId
+        )
+        AND NOT EXISTS
+        (
+            SELECT 1
+            FROM dbo.Fretrack_InvoiceLineItems_Staging s
+            WHERE s.FretrackCargoID = @FretrackCargoId
+              AND s.CargomintInvoiceId = il.InvoiceId
+              AND s.CargoMintChargeId = il.ShipmentChargeId
+              AND s.CargoMintChargeItemID = il.ChargeItemId
+        );
+
         /* =========================================================
           
            14. Invoice line items insert/update
@@ -2383,7 +2506,7 @@ BEGIN
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'M' THEN 22
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'C' THEN 23
                 WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'P' THEN 24
-                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'B' THEN 4
+                WHEN UPPER(LEFT(LTRIM(RTRIM(s.JobNumber)), 1)) = 'B' THEN 29
                 ELSE s.BranchId
             END
         FROM dbo.Fretrack_VendorBill_Staging s
@@ -2741,12 +2864,27 @@ BEGIN
         
             ---- update Bill ExRate from Fretrack_VendorBill_Staging table
         
-            UPDATE vb
+        UPDATE vb
         SET vb.ExRate = zm.ExchangeRate
         FROM Bills vb
         INNER JOIN Fretrack_VendorBill_Staging zm
             ON vb.BillId = zm.CargoMintBillID
         WHERE vb.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE b
+        SET
+            b.IsDeleted = 1,
+            b.DeletedDate = GETDATE()
+        FROM dbo.Bills b
+        WHERE b.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_VendorBill_Staging s
+              WHERE s.FretrackCargoID = @FretrackCargoId
+                AND s.FretrackVendorBillID = b.FretrackVendorBillID
+                AND ISNULL(s.isDeleted, 0) = 0
+          );
         
         
 
@@ -2925,6 +3063,28 @@ BEGIN
             ) * ISNULL(f.BillExRate, 1)
     FROM dbo.Fretrack_VendorBillLineItems_Staging f
     WHERE f.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE bli
+        SET
+            bli.IsDeleted = 1,
+            bli.DeletedDate = GETDATE()
+        FROM dbo.BillLineItems bli
+        WHERE EXISTS
+        (
+            SELECT 1
+            FROM dbo.Bills b
+            WHERE b.BillId = bli.BillId
+              AND b.FretrackCargoID = @FretrackCargoId
+        )
+        AND NOT EXISTS
+        (
+            SELECT 1
+            FROM dbo.Fretrack_VendorBillLineItems_Staging stg
+            WHERE stg.FretrackCargoID = @FretrackCargoId
+              AND stg.CragomintBillId = bli.BillId
+              AND stg.CargoMintChargeId = bli.ShipmentChargeId
+              AND stg.CargoMintChargeItemID = bli.ChargeItemId
+        );
 
     
  
@@ -3168,6 +3328,21 @@ BEGIN
         JOIN dbo.Fretrack_UserMaster_Staging u
             ON s.ModifiedBy = u.FretrackUserId
         WHERE s.FretrackCargoID = @FretrackCargoId;
+
+        UPDATE h
+        SET
+            h.IsDeleted = 1,
+            h.DateDeleted = GETDATE()
+        FROM dbo.ShipmentHBL h
+        WHERE h.FretrackCargoID = @FretrackCargoId
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.Fretrack_HBL_Staging s
+              WHERE s.FretrackCargoID = @FretrackCargoId
+                AND s.FretrackHBLID = h.FretrackHBLID
+                AND ISNULL(s.isDeleted, 0) = 0
+          );
 
         UPDATE h
         SET h.CargoMintShipperAddressID = ca.CompanyAddressId

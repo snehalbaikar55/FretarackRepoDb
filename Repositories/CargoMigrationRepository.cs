@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
@@ -34,6 +35,9 @@ public class CargoMigrationRepository : ICargoMigrationRepository
 
     public async Task<CargoMigrationResponse> MigrateSingleJobAsync(string jobNo, int orgId = 18, CancellationToken cancellationToken = default)
     {
+        var migrationStopwatch = Stopwatch.StartNew();
+        _logger.LogInformation("Single-job repository migration started for JobNo {JobNo}.", jobNo);
+
         if (string.IsNullOrWhiteSpace(jobNo))
         {
             throw new ArgumentException("JobNo is required.", nameof(jobNo));
@@ -44,6 +48,10 @@ public class CargoMigrationRepository : ICargoMigrationRepository
 
         await sourceConnection.OpenAsync(cancellationToken);
         await targetConnection.OpenAsync(cancellationToken);
+        _logger.LogInformation(
+            "Single-job migration connections opened for JobNo {JobNo} in {ElapsedMilliseconds} ms.",
+            jobNo,
+            migrationStopwatch.ElapsedMilliseconds);
 
         var cargoSchema = await ResolveTableSchemaAsync(sourceConnection, "Cargo", cancellationToken, defaultSchema: "dbo");
         string? cargoMintCargoSchema = null;
@@ -75,6 +83,10 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                 parameters.Add(new SqlParameter("@OrgId", SqlDbType.Int) { Value = orgId });
             },
             cancellationToken);
+        _logger.LogInformation(
+            "Single-job cargo header loaded for JobNo {JobNo} in {ElapsedMilliseconds} ms.",
+            jobNo,
+            migrationStopwatch.ElapsedMilliseconds);
 
         if (cargoHeader.Rows.Count == 0)
         {
@@ -119,6 +131,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
         {
             await DeleteExistingStagingRowsAsync(targetConnection, transaction, cargoId, cancellationToken);
 
+            var stagingDataStopwatch = Stopwatch.StartNew();
             var stagingCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Fretrack_Cargo_Staging"] = await CopyQueryToStagingAsync(
@@ -250,7 +263,19 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                         parameters.Add(new SqlParameter("@CargoID", SqlDbType.Int) { Value = cargoId });
                         parameters.Add(new SqlParameter("@OrgId", SqlDbType.Int) { Value = orgId });
                     },
-                    cancellationToken),
+                    cancellationToken,
+                    beforeBulkCopyAsync: async (table, _) =>
+                    {
+                        await ClearInvalidUserReferencesAsync(
+                            table,
+                            targetConnection,
+                            transaction,
+                            usersSchema,
+                            cancellationToken,
+                            "CargoMintCreatedBy",
+                            "CargoMintModifiedBy",
+                            "CargoMintDeletedBy");
+                    }),
 
                 ["Fretrack_Invoices_Staging"] = await CopyQueryToStagingAsync(
                     sourceConnection,
@@ -258,6 +283,19 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                     transaction,
                     "Fretrack_Invoices_Staging",
                     QualifySourceTables(cargoSchema, InvoicesSql),
+                    parameters =>
+                    {
+                        parameters.Add(new SqlParameter("@CargoID", SqlDbType.Int) { Value = cargoId });
+                        parameters.Add(new SqlParameter("@OrgId", SqlDbType.Int) { Value = orgId });
+                    },
+                    cancellationToken),
+
+                ["Fretrack_InvoiceEsync_Staging"] = await CopyQueryToStagingAsync(
+                    sourceConnection,
+                    targetConnection,
+                    transaction,
+                    "Fretrack_InvoiceEsync_Staging",
+                    QualifySourceTables(cargoSchema, InvoiceESyncSql),
                     parameters =>
                     {
                         parameters.Add(new SqlParameter("@CargoID", SqlDbType.Int) { Value = cargoId });
@@ -360,15 +398,32 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                         ["DocumentTypeID"] = "FretrackDocumentTypeID"
                     })
             };
+            _logger.LogInformation(
+                "Stage job data completed for CargoID {CargoId} in {ElapsedMilliseconds} ms.",
+                cargoId,
+                stagingDataStopwatch.ElapsedMilliseconds);
 
+            var stagingCommitStopwatch = Stopwatch.StartNew();
             await transaction.CommitAsync(cancellationToken);
             stagingCommitted = true;
+            _logger.LogInformation(
+                "Single-job staging transaction commit completed for CargoID {CargoId} in {ElapsedMilliseconds} ms.",
+                cargoId,
+                stagingCommitStopwatch.ElapsedMilliseconds);
 
+            var storedProcedureStopwatch = Stopwatch.StartNew();
             await ExecuteStoredProcedureAsync(targetConnection, cargoId, orgId, cancellationToken);
+            _logger.LogInformation(
+                "Single-job migration stored procedure completed for CargoID {CargoId} in {ElapsedMilliseconds} ms.",
+                cargoId,
+                storedProcedureStopwatch.ElapsedMilliseconds);
+
+            var documentMigrationStopwatch = Stopwatch.StartNew();
             var cargoDocumentMigrationResult = await _cargoDocumentMigrationRepository.MigrateByCargoIdAsync(cargoId, orgId, cancellationToken);
             _logger.LogInformation(
-                "Cargo document migration completed for CargoID {CargoId}. Migrated={MigratedRows}, Skipped={SkippedRows}, Failed={FailedRows}.",
+                "Cargo document migration completed for CargoID {CargoId} in {ElapsedMilliseconds} ms. Migrated={MigratedRows}, Skipped={SkippedRows}, Failed={FailedRows}.",
                 cargoId,
+                documentMigrationStopwatch.ElapsedMilliseconds,
                 cargoDocumentMigrationResult.MigratedRows,
                 cargoDocumentMigrationResult.SkippedRows,
                 cargoDocumentMigrationResult.FailedRows);
@@ -500,6 +555,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             "DELETE FROM Fretrack_Shipment_Routing_Staging_New WHERE FretrackCargoID = @CargoID",
             "DELETE FROM Fretrack_CargoEntities_Staging WHERE FretrackCargoID = @CargoID",
             "DELETE FROM Fretrack_Invoices_Staging WHERE FretrackCargoID = @CargoID",
+            "DELETE FROM Fretrack_InvoiceEsync_Staging WHERE CargoID = @CargoID",
             "DELETE FROM Fretrack_ShipmentCharges_Staging WHERE FretrackCargoId = @CargoID",
             "DELETE FROM Fretrack_InvoiceLineItems_Staging WHERE FretrackCargoID = @CargoID",
             "DELETE FROM Fretrack_VendorBillLineItems_Staging WHERE FretrackCargoID = @CargoID",
@@ -510,6 +566,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
 
         foreach (var sql in deleteStatements)
         {
+            var cleanupStopwatch = Stopwatch.StartNew();
             await ExecuteNonQueryAsync(
                 connection,
                 transaction,
@@ -519,6 +576,10 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                     parameters.Add(new SqlParameter("@CargoID", SqlDbType.Int) { Value = cargoId });
                 },
                 cancellationToken);
+            _logger.LogInformation(
+                "Staging cleanup completed for {StagingTable} in {ElapsedMilliseconds} ms.",
+                Regex.Match(sql, @"DELETE FROM\s+(\S+)", RegexOptions.IgnoreCase).Groups[1].Value,
+                cleanupStopwatch.ElapsedMilliseconds);
         }
     }
 
@@ -533,12 +594,27 @@ public class CargoMigrationRepository : ICargoMigrationRepository
         IReadOnlyDictionary<string, string>? columnRenames = null,
         Func<DataTable, CancellationToken, Task>? beforeBulkCopyAsync = null)
     {
+        var stagingStopwatch = Stopwatch.StartNew();
+        _logger.LogInformation("Staging {DestinationTable} started.", destinationTableName);
+
+        var sourceQueryStopwatch = Stopwatch.StartNew();
         var table = await LoadDataTableAsync(sourceConnection, sql, addParameters, cancellationToken);
+        _logger.LogInformation(
+            "Staging {DestinationTable} source query completed in {ElapsedMilliseconds} ms with {RowCount} rows.",
+            destinationTableName,
+            sourceQueryStopwatch.ElapsedMilliseconds,
+            table.Rows.Count);
+
         if (table.Rows.Count == 0)
         {
+            _logger.LogInformation(
+                "Staging {DestinationTable} completed in {ElapsedMilliseconds} ms with 0 rows.",
+                destinationTableName,
+                stagingStopwatch.ElapsedMilliseconds);
             return 0;
         }
 
+        var preparationStopwatch = Stopwatch.StartNew();
         if (columnRenames is not null && columnRenames.Count > 0)
         {
             ApplyColumnRenames(table, columnRenames);
@@ -553,7 +629,12 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             "Staging query for {DestinationTable} produced columns: {Columns}",
             destinationTableName,
             string.Join(", ", table.Columns.Cast<DataColumn>().Select(column => column.ColumnName)));
+        _logger.LogInformation(
+            "Staging {DestinationTable} data preparation completed in {ElapsedMilliseconds} ms.",
+            destinationTableName,
+            preparationStopwatch.ElapsedMilliseconds);
 
+        var targetMetadataStopwatch = Stopwatch.StartNew();
         var destinationSchema = await ResolveTableSchemaAsync(targetConnection, destinationTableName, cancellationToken, transaction);
         var destinationColumns = await LoadTableColumnsAsync(
             targetConnection,
@@ -573,8 +654,17 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             destinationTableName,
             cancellationToken,
             transaction);
+        _logger.LogInformation(
+            "Staging {DestinationTable} target metadata lookup completed in {ElapsedMilliseconds} ms.",
+            destinationTableName,
+            targetMetadataStopwatch.ElapsedMilliseconds);
 
+        var normalizationStopwatch = Stopwatch.StartNew();
         NormalizeDataTableForBulkCopy(table, destinationColumnTypes);
+        _logger.LogInformation(
+            "Staging {DestinationTable} data normalization completed in {ElapsedMilliseconds} ms.",
+            destinationTableName,
+            normalizationStopwatch.ElapsedMilliseconds);
 
         using var bulkCopy = new SqlBulkCopy(targetConnection, SqlBulkCopyOptions.TableLock, transaction)
         {
@@ -615,7 +705,14 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             bulkCopy.ColumnMappings.Add(column.ColumnName, column.ColumnName);
         }
 
+        var bulkCopyStopwatch = Stopwatch.StartNew();
         await bulkCopy.WriteToServerAsync(table, cancellationToken);
+        _logger.LogInformation(
+            "Staging {DestinationTable} bulk insert completed in {ElapsedMilliseconds} ms with {RowCount} rows. Total staging-table time: {TotalElapsedMilliseconds} ms.",
+            destinationTableName,
+            bulkCopyStopwatch.ElapsedMilliseconds,
+            table.Rows.Count,
+            stagingStopwatch.ElapsedMilliseconds);
         return table.Rows.Count;
     }
 
@@ -638,6 +735,25 @@ public class CargoMigrationRepository : ICargoMigrationRepository
     {
         foreach (DataColumn column in table.Columns)
         {
+            if (column.ReadOnly)
+            {
+                if (string.IsNullOrWhiteSpace(column.Expression))
+                {
+                    try
+                    {
+                        column.ReadOnly = false;
+                    }
+                    catch (ReadOnlyException)
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
             if (!destinationColumnTypes.TryGetValue(column.ColumnName, out var destinationType))
             {
                 continue;
@@ -828,16 +944,19 @@ WHERE QuotationId = @QuotationId;", targetConnection, transaction);
                 continue;
             }
 
-            var value = table.Rows[0][columnName];
-            if (value is DBNull or null)
+            foreach (DataRow row in table.Rows)
             {
-                continue;
-            }
+                var value = row[columnName];
+                if (value is DBNull or null)
+                {
+                    continue;
+                }
 
-            var userId = Convert.ToInt32(value);
-            if (!await UserExistsInCargoMintAsync(targetConnection, transaction, usersSchema, userId, cancellationToken))
-            {
-                table.Rows[0][columnName] = DBNull.Value;
+                var userId = Convert.ToInt32(value);
+                if (!await UserExistsInCargoMintAsync(targetConnection, transaction, usersSchema, userId, cancellationToken))
+                {
+                    row[columnName] = DBNull.Value;
+                }
             }
         }
     }
@@ -1065,7 +1184,7 @@ SELECT
     p.isDeleted AS IsDeleted,
     p.ModifiedBy,
     p.DateModified,
-    CAST(NULL AS INT) AS CargoMintCreatedBy,
+    CAST(NULL AS INT) AS CargoMintCreatedby,
     CAST(NULL AS INT) AS CargoMintUpdatedBy,
     CAST(NULL AS INT) AS CargoMintDeletedBy,
     CAST(NULL AS INT) AS CargoMintContainerTypeId,
@@ -1097,6 +1216,7 @@ SELECT
     c.PickupAddressID,
     c.DeliveryAddressID,
     c.OpportunityID,
+    cd.HandledBy As HandledById,
     CAST(NULL AS INT) AS CargoMintCompanyId,
     CAST(NULL AS INT) AS CargoMintSalesPersonId,
     cd.NominationType,
@@ -1183,6 +1303,7 @@ LEFT JOIN [{schema}].[CargoDetails] cd
         qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+CargoContainers\b", $"FROM [{schema}].[CargoContainers]");
         qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+CargoEntities\b", $"FROM [{schema}].[CargoEntities]");
         qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+Invoices\b", $"FROM [{schema}].[Invoices]");
+        qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+InvoiceESync\b", $"FROM [{schema}].[InvoiceESync]");
         qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+CargoCharges\b", $"FROM [{schema}].[CargoCharges]");
         qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+InvoiceLineItems\b", $"FROM [{schema}].[InvoiceLineItems]");
         qualifiedSql = Regex.Replace(qualifiedSql, @"\bFROM\s+VendorBillLineItems\b", $"FROM [{schema}].[VendorBillLineItems]");
@@ -1352,6 +1473,8 @@ INNER JOIN OceanShipmentRouting osr
 INNER JOIN JobTypeMaster j
     ON c.JobType = j.JOBTypeID
     WHERE c.CargoID = @CargoID
+    AND j.JOBTypeName <> 'Courier'
+
       AND ISNULL(c.isDeleted, 0) = 0
       AND ISNULL(osr.IsDeleted, 0) = 0
 UNION ALL
@@ -1390,6 +1513,12 @@ INNER JOIN AirShipmentRouting asr
 INNER JOIN JobTypeMaster j
     ON c.JobType = j.JOBTypeID
     WHERE c.CargoID = @CargoID
+     AND j.JOBTypeName NOT IN (
+        'Custom Clearance',
+        'Transportation',
+        'Documentation',
+        'Warehousing'
+      )
       AND ISNULL(c.isDeleted, 0) = 0
       AND ISNULL(asr.IsDeleted, 0) = 0;";
 
@@ -1496,6 +1625,40 @@ SELECT
 FROM Invoices i
     WHERE i.CargoID = @CargoID
       AND ISNULL(i.isDeleted, 0) = 0;";
+
+private const string InvoiceESyncSql = @"
+SELECT
+    @OrgId AS OrgId,
+    ies.SyncID AS FretrackSyncID,
+    ies.InvoiceID AS FretrackInvoiceID,
+    ies.InvoiceNumber AS FretrackInvoiceNumber,
+    ies.AckNo AS FretrackAckNo,
+    ies.AckDt AS FretrackAckDt,
+    ies.IrnNo AS FretrackIrnNo,
+    ies.SignedInvoice AS FretrackSignedInvoice,
+    ies.SignedQRCode AS FretrackSignedQRCode,
+    ies.SyncResponse AS FretrackSyncResponse,
+    ies.SyncedBy AS FretrackSyncedBy,
+    ies.SyncDate AS FretrackSyncDate,
+    c.CargoID AS CargoID,
+    CAST(1 AS BIT) AS IsSelectedForMigration,
+    CAST(NULL AS NVARCHAR(500)) AS MigrationRemarks,
+    GETDATE() AS ImportedOn
+FROM InvoiceESync ies
+INNER JOIN Invoices i
+    ON i.InvoiceID = ies.InvoiceID
+INNER JOIN Cargo c
+    ON c.CargoID = i.CargoID
+WHERE i.CargoID = @CargoID
+  AND ISNULL(i.IsDeleted, 0) = 0
+  AND ISNULL(c.IsDeleted, 0) = 0
+  AND (
+      c.JobNo LIKE '%FL26%'
+      OR c.JobNo LIKE '%AE26%'
+      OR c.JobNo LIKE '%SE26%'
+      OR c.JobNo LIKE '%AI26%'
+      OR c.JobNo LIKE '%SI26%'
+  );";
 
 private const string ShipmentChargesSql = @"
 SELECT
@@ -1762,7 +1925,27 @@ SELECT
     NoOfPackages,
     DescriptionOfPackagesGoods,
     GrossWeight,
-    Measurement,
+    CASE
+        WHEN TRY_CONVERT(decimal(18,6), Measurement) IS NOT NULL
+            THEN TRY_CONVERT(decimal(18,6), Measurement)
+        ELSE TRY_CONVERT(
+            decimal(18,6),
+            NULLIF(
+                LTRIM(RTRIM(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(CAST(Measurement AS nvarchar(4000)), 'CBM:', ''),
+                            'CBM',
+                            ''
+                        ),
+                        ':',
+                        ''
+                    )
+                )),
+                ''
+            )
+        )
+    END AS Measurement,
     DeclaredValue,
     HBLDate,
     HBLPlace,

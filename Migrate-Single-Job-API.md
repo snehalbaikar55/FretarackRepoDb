@@ -163,6 +163,7 @@ The API currently loads these staging tables:
 - `Fretrack_Shipment_Routing_Staging_New`
 - `Fretrack_CargoEntities_Staging`
 - `Fretrack_Invoices_Staging`
+- `Fretrack_InvoiceEsync_Staging`
 - `Fretrack_ShipmentCharges_Staging`
 - `Fretrack_InvoiceLineItems_Staging`
 - `Fretrack_VendorBill_Staging`

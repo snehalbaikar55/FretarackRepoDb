@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using RepoDbApi.Contracts;
 using RepoDbApi.Services;
+using System.Diagnostics;
 using System.Net.Http;
 
 namespace RepoDbApi.Controllers;
@@ -29,6 +30,7 @@ public class FretrackMigrationController : ControllerBase
         }
 
         var jobNo = request.JobNo.Trim();
+        var migrationStopwatch = Stopwatch.StartNew();
 
         try
         {
@@ -58,6 +60,13 @@ public class FretrackMigrationController : ControllerBase
                 StatusCodes.Status500InternalServerError,
                 CreateFailedResponse(jobNo, rootMessage, "migration_failed"));
         }
+        finally
+        {
+            _logger.LogInformation(
+                "Single-job migration API completed for JobNo {JobNo} in {ElapsedMilliseconds} ms.",
+                jobNo,
+                migrationStopwatch.ElapsedMilliseconds);
+        }
     }
 
     private async Task TryFetchZohoBillAndInvoiceAsync(string jobNo, CancellationToken cancellationToken)
@@ -79,6 +88,7 @@ public class FretrackMigrationController : ControllerBase
         string jobNo,
         CancellationToken cancellationToken)
     {
+        var resourceStopwatch = Stopwatch.StartNew();
         try
         {
             var response = await client.GetAsync(url, cancellationToken);
@@ -87,26 +97,29 @@ public class FretrackMigrationController : ControllerBase
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
-                    "Zoho {ResourceLabel} fetch failed for JobNo {JobNo} with HTTP {StatusCode}: {Content}",
+                    "Zoho {ResourceLabel} fetch failed for JobNo {JobNo} after {ElapsedMilliseconds} ms with HTTP {StatusCode}: {Content}",
                     resourceLabel,
                     jobNo,
+                    resourceStopwatch.ElapsedMilliseconds,
                     (int)response.StatusCode,
                     content);
                 return;
             }
 
             _logger.LogInformation(
-                "Zoho {ResourceLabel} fetch completed for JobNo {JobNo}.",
+                "Zoho {ResourceLabel} fetch completed for JobNo {JobNo} in {ElapsedMilliseconds} ms.",
                 resourceLabel,
-                jobNo);
+                jobNo,
+                resourceStopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "Zoho {ResourceLabel} fetch failed for JobNo {JobNo}. Migration will continue.",
+                "Zoho {ResourceLabel} fetch failed for JobNo {JobNo} after {ElapsedMilliseconds} ms. Migration will continue.",
                 resourceLabel,
-                jobNo);
+                jobNo,
+                resourceStopwatch.ElapsedMilliseconds);
         }
     }
 
