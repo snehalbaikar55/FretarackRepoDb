@@ -1,3 +1,4 @@
+using RepoDbApi.Services;
 using System.Data;
 using System.Diagnostics;
 using System.Globalization;
@@ -412,13 +413,16 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                 stagingCommitStopwatch.ElapsedMilliseconds);
 
             var storedProcedureStopwatch = Stopwatch.StartNew();
+            MigrationProgress.Report("apply", "running");
             await ExecuteStoredProcedureAsync(targetConnection, cargoId, orgId, cancellationToken);
+            MigrationProgress.Report("apply", "completed");
             _logger.LogInformation(
                 "Single-job migration stored procedure completed for CargoID {CargoId} in {ElapsedMilliseconds} ms.",
                 cargoId,
                 storedProcedureStopwatch.ElapsedMilliseconds);
 
             var documentMigrationStopwatch = Stopwatch.StartNew();
+            MigrationProgress.Report("documents", "running");
             var cargoDocumentMigrationResult = await _cargoDocumentMigrationRepository.MigrateByCargoIdAsync(cargoId, orgId, cancellationToken);
             _logger.LogInformation(
                 "Cargo document migration completed for CargoID {CargoId} in {ElapsedMilliseconds} ms. Migrated={MigratedRows}, Skipped={SkippedRows}, Failed={FailedRows}.",
@@ -428,6 +432,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                 cargoDocumentMigrationResult.SkippedRows,
                 cargoDocumentMigrationResult.FailedRows);
 
+            MigrationProgress.Report("documents", cargoDocumentMigrationResult.FailedRows > 0 ? "warning" : "completed", cargoDocumentMigrationResult.MigratedRows);
             return new CargoMigrationResponse
             {
                 JobNo = normalizedJobNo,
@@ -594,6 +599,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
         IReadOnlyDictionary<string, string>? columnRenames = null,
         Func<DataTable, CancellationToken, Task>? beforeBulkCopyAsync = null)
     {
+        MigrationProgress.Report(destinationTableName, "running");
         var stagingStopwatch = Stopwatch.StartNew();
         _logger.LogInformation("Staging {DestinationTable} started.", destinationTableName);
 
@@ -611,6 +617,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
                 "Staging {DestinationTable} completed in {ElapsedMilliseconds} ms with 0 rows.",
                 destinationTableName,
                 stagingStopwatch.ElapsedMilliseconds);
+            MigrationProgress.Report(destinationTableName, "staged", 0);
             return 0;
         }
 
@@ -713,6 +720,7 @@ public class CargoMigrationRepository : ICargoMigrationRepository
             bulkCopyStopwatch.ElapsedMilliseconds,
             table.Rows.Count,
             stagingStopwatch.ElapsedMilliseconds);
+        MigrationProgress.Report(destinationTableName, "staged", table.Rows.Count);
         return table.Rows.Count;
     }
 
@@ -1259,7 +1267,8 @@ SELECT
     c.CargoApprovalStatus,
     c.CargoSOPApprovalStatus,
     c.OfficeID,
-    c.FreightStatus AS ShipmentStatus,
+    'Planned' As ShipmentStatus,
+    c.FreightStatus AS FreightStatus,
     c.PaymentTerms,
     c.InvoicingParty,
     c.JobType,

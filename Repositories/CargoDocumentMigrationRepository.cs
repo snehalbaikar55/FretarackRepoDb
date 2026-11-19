@@ -92,6 +92,9 @@ SELECT DISTINCT
 FROM [{stagingSchema}].[Fretrack_CargoDocuments_Staging] s
 WHERE s.[{cargoColumn}] = @CargoId
   AND s.[{docColumn}] IS NOT NULL
+  AND s.[ImportedOn] IS NULL
+  AND s.[IsSelectedForMigration] IS NULL
+  AND s.[MigrationRemarks] IS NULL
 ORDER BY s.[{docColumn}];",
             parameters =>
             {
@@ -130,6 +133,8 @@ ORDER BY s.[{docColumn}];",
                 });
             }
         }
+
+        await SynchronizeVendorBillDocumentsAsync(connection, cargoId, orgId, cancellationToken);
 
         return result;
     }
@@ -342,16 +347,7 @@ ORDER BY s.[{docIdColumn}];",
                 cargoId,
                 fretrackCargoDocumentId,
                 existingDocumentId.Value,
-                "Already imported and Azure path synchronized",
-                cancellationToken);
-
-            await UpdateMatchingBillDocumentAsync(
-                connection,
-                transaction,
-                documentsSchema,
-                entityId,
-                existingDocumentId.Value,
-                docTypeId,
+                $"Migrated to Document {existingDocumentId.Value} at {uploadedAsset.BlobName}",
                 cancellationToken);
 
             _logger.LogInformation(
@@ -387,20 +383,11 @@ ORDER BY s.[{docIdColumn}];",
             connection,
             transaction,
             stagingRow,
-            cargoId,
-            fretrackCargoDocumentId,
-            documentId,
-            "Imported successfully",
-            cancellationToken);
-
-        await UpdateMatchingBillDocumentAsync(
-            connection,
-            transaction,
-            documentsSchema,
-            entityId,
-            documentId,
-            docTypeId,
-            cancellationToken);
+                cargoId,
+                fretrackCargoDocumentId,
+                documentId,
+                $"Migrated to Document {documentId} at {uploadedAsset.BlobName}",
+                cancellationToken);
 
         _logger.LogInformation(
             "Cargo document inserted for CargoID {CargoId} and FretrackCargoDocumentID {FretrackCargoDocumentId}. DocId={DocumentId}, BlobUrl={BlobUrl}.",
@@ -483,9 +470,8 @@ WHERE [{documentColumn}] = @FretrackCargoDocumentId";
         var targetColumns = await LoadTableColumnsAsync(connection, schema, "Documents", cancellationToken, transaction);
         var idColumn = ResolveFirstColumn(targetColumns, "DocId", "DocumentID", "CargoDocumentID");
         var fretrackColumn = ResolveFirstColumn(targetColumns, "FretrackDocumentID", "FretrackCargoDocumentID");
-        var cargoColumn = ResolveFirstColumn(targetColumns, "FretrackCargoId", "FretrackCargoID", "CargoID", "CargoId");
 
-        if (idColumn is null || fretrackColumn is null || cargoColumn is null)
+        if (idColumn is null || fretrackColumn is null)
         {
             return null;
         }
@@ -493,12 +479,10 @@ WHERE [{documentColumn}] = @FretrackCargoDocumentId";
         using var command = new SqlCommand($@"
 SELECT TOP 1 [{idColumn}]
 FROM [{schema}].[Documents]
-WHERE [{fretrackColumn}] = @FretrackCargoDocumentId
-  AND [{cargoColumn}] = @CargoId;", connection, transaction);
+WHERE [{fretrackColumn}] = @FretrackCargoDocumentId;", connection, transaction);
         command.CommandTimeout = _commandTimeoutSeconds;
 
         command.Parameters.Add(new SqlParameter("@FretrackCargoDocumentId", SqlDbType.Int) { Value = fretrackCargoDocumentId });
-        command.Parameters.Add(new SqlParameter("@CargoId", SqlDbType.Int) { Value = cargoId });
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is null or DBNull)
@@ -775,6 +759,109 @@ WHERE [{idColumn}] = @DocumentId;", connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task<int> SynchronizeVendorBillDocumentsAsync(
+        SqlConnection connection,
+        int cargoId,
+        int orgId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var billsSchema = await ResolveTableSchemaAsync(connection, "Bills", cancellationToken);
+            var vendorBillStagingSchema = await ResolveTableSchemaAsync(connection, "Fretrack_VendorBill_Staging", cancellationToken);
+            var documentsSchema = await ResolveTableSchemaAsync(connection, "Documents", cancellationToken);
+            var billsColumns = await LoadTableColumnsAsync(connection, billsSchema, "Bills", cancellationToken);
+            var stagingColumns = await LoadTableColumnsAsync(connection, vendorBillStagingSchema, "Fretrack_VendorBill_Staging", cancellationToken);
+            var documentColumns = await LoadTableColumnsAsync(connection, documentsSchema, "Documents", cancellationToken);
+
+            var billIdColumn = ResolveFirstColumn(billsColumns, "BillId");
+            var billDocumentIdColumn = ResolveFirstColumn(billsColumns, "DocumentId");
+            var billDocumentPathColumn = ResolveFirstColumn(billsColumns, "DocumentPath");
+            var billOrgIdColumn = ResolveFirstColumn(billsColumns, "OrgId");
+            var billShipmentIdColumn = ResolveFirstColumn(billsColumns, "ShipmentId");
+            var billDeletedColumn = ResolveFirstColumn(billsColumns, "IsDeleted", "isDeleted");
+            var stagingBillIdColumn = ResolveFirstColumn(stagingColumns, "CargoMintBillID");
+            var stagingDocumentIdColumn = ResolveFirstColumn(stagingColumns, "CargoDocumentID", "FretrackCargoDocumentID");
+            var stagingCargoIdColumn = ResolveFirstColumn(stagingColumns, "FretrackCargoID", "FretrackCargoId", "CargoID", "CargoId");
+            var stagingDeletedColumn = ResolveFirstColumn(stagingColumns, "IsDeleted", "isDeleted");
+            var documentIdColumn = ResolveFirstColumn(documentColumns, "DocId", "DocumentID", "CargoDocumentID");
+            var documentFretrackIdColumn = ResolveFirstColumn(documentColumns, "FretrackDocumentID", "FretrackCargoDocumentID");
+            var documentOrgIdColumn = ResolveFirstColumn(documentColumns, "OrgId");
+            var documentEntityTypeColumn = ResolveFirstColumn(documentColumns, "EntityType");
+            var documentEntityIdColumn = ResolveFirstColumn(documentColumns, "EntityId");
+            var documentPathColumn = ResolveFirstColumn(documentColumns, "DocFilePath");
+            var documentDeletedColumn = ResolveFirstColumn(documentColumns, "IsDeleted", "isDeleted");
+
+            if (billIdColumn is null
+                || billDocumentIdColumn is null
+                || billDocumentPathColumn is null
+                || billOrgIdColumn is null
+                || billShipmentIdColumn is null
+                || stagingBillIdColumn is null
+                || stagingDocumentIdColumn is null
+                || stagingCargoIdColumn is null
+                || documentIdColumn is null
+                || documentFretrackIdColumn is null
+                || documentOrgIdColumn is null
+                || documentEntityTypeColumn is null
+                || documentEntityIdColumn is null
+                || documentPathColumn is null)
+            {
+                _logger.LogWarning("Vendor bill document synchronization skipped because the required target columns were not found.");
+                return 0;
+            }
+
+            var billDeletedPredicate = billDeletedColumn is null ? "1 = 1" : $"ISNULL(b.[{billDeletedColumn}], 0) = 0";
+            var stagingDeletedPredicate = stagingDeletedColumn is null ? "1 = 1" : $"ISNULL(s.[{stagingDeletedColumn}], 0) = 0";
+            var documentDeletedPredicate = documentDeletedColumn is null ? "1 = 1" : $"ISNULL(d.[{documentDeletedColumn}], 0) = 0";
+
+            using var command = new SqlCommand($@"
+UPDATE b
+SET b.[{billDocumentIdColumn}] = d.[{documentIdColumn}],
+    b.[{billDocumentPathColumn}] = d.[{documentPathColumn}]
+FROM [{billsSchema}].[Bills] AS b
+INNER JOIN [{vendorBillStagingSchema}].[Fretrack_VendorBill_Staging] AS s
+    ON b.[{billIdColumn}] = s.[{stagingBillIdColumn}]
+INNER JOIN [{documentsSchema}].[Documents] AS d
+    ON d.[{documentFretrackIdColumn}] = s.[{stagingDocumentIdColumn}]
+   AND d.[{documentOrgIdColumn}] = b.[{billOrgIdColumn}]
+   AND d.[{documentEntityTypeColumn}] = 'Shipment'
+   AND d.[{documentEntityIdColumn}] = b.[{billShipmentIdColumn}]
+WHERE b.[{billOrgIdColumn}] = @OrgId
+  AND {billDeletedPredicate}
+  AND {stagingDeletedPredicate}
+  AND {documentDeletedPredicate}
+  AND NULLIF(d.[{documentPathColumn}], '') IS NOT NULL
+  AND s.[{stagingCargoIdColumn}] = @CargoId
+  AND (
+        b.[{billDocumentIdColumn}] IS NULL
+        OR b.[{billDocumentIdColumn}] <> d.[{documentIdColumn}]
+        OR b.[{billDocumentPathColumn}] IS NULL
+        OR b.[{billDocumentPathColumn}] <> d.[{documentPathColumn}]
+      );", connection)
+            {
+                CommandTimeout = _commandTimeoutSeconds
+            };
+
+            command.Parameters.Add(new SqlParameter("@OrgId", SqlDbType.Int) { Value = orgId });
+            command.Parameters.Add(new SqlParameter("@CargoId", SqlDbType.Int) { Value = cargoId });
+            var updatedRows = await command.ExecuteNonQueryAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Synchronized {UpdatedRows} vendor bill document links for CargoID {CargoId} and OrgId {OrgId} after cargo-document migration.",
+                updatedRows,
+                cargoId,
+                orgId);
+
+            return updatedRows;
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Vendor bill document synchronization skipped because a required table was not found.");
+            return 0;
+        }
+    }
+
     private async Task UpdateMatchingBillDocumentAsync(
         SqlConnection connection,
         SqlTransaction transaction,
@@ -866,21 +953,16 @@ WHERE b.[{billShipmentIdColumn}] = @ShipmentId
             throw new InvalidOperationException($"No source file path was found for CargoID {cargoId} and FretrackCargoDocumentID {fretrackCargoDocumentId}.");
         }
 
+        var fileName = GetPreferredFileName(stagingRow, sourceUrl);
+        var blobName = BuildBlobName(fretrackCargoDocumentId, fileName);
+
         if (LooksLikeAzureBlobUrl(sourceUrl))
         {
             return new UploadedDocumentAsset(
                 sourceUrl,
-                GetString(stagingRow, "BlobName") ?? BuildBlobName(GetPreferredFileName(stagingRow, sourceUrl)),
-                BuildDocumentViewUrl(GetString(stagingRow, "BlobName") ?? BuildBlobName(GetPreferredFileName(stagingRow, sourceUrl))),
-                GetPreferredFileName(stagingRow, sourceUrl));
-        }
-
-        var fileName = GetPreferredFileName(stagingRow, sourceUrl);
-        var blobName = BuildBlobName(fileName);
-        var fileBytes = await DownloadFtpFileAsync(sourceUrl, cancellationToken);
-        if (fileBytes.Length == 0)
-        {
-            throw new InvalidOperationException($"Unable to download document bytes for CargoID {cargoId} and FretrackCargoDocumentID {fretrackCargoDocumentId}.");
+                blobName,
+                sourceUrl,
+                fileName);
         }
 
         var blobServiceClient = new BlobServiceClient(_destinationConnectionString);
@@ -888,6 +970,21 @@ WHERE b.[{billShipmentIdColumn}] = @ShipmentId
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: cancellationToken);
 
         var blobClient = containerClient.GetBlobClient(blobName);
+        if (await blobClient.ExistsAsync(cancellationToken))
+        {
+            return new UploadedDocumentAsset(
+                sourceUrl,
+                blobName,
+                BuildDocumentViewUrl(blobName),
+                fileName);
+        }
+
+        var fileBytes = await DownloadFtpFileAsync(sourceUrl, cancellationToken);
+        if (fileBytes.Length == 0)
+        {
+            throw new InvalidOperationException($"Unable to download document bytes for CargoID {cargoId} and FretrackCargoDocumentID {fretrackCargoDocumentId}.");
+        }
+
         await using (var uploadStream = new MemoryStream(fileBytes))
         {
             var options = new BlobUploadOptions
@@ -898,7 +995,17 @@ WHERE b.[{billShipmentIdColumn}] = @ShipmentId
                 }
             };
 
-            await blobClient.UploadAsync(uploadStream, options, cancellationToken);
+            try
+            {
+                await blobClient.UploadAsync(uploadStream, options, cancellationToken);
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+            {
+                _logger.LogInformation(
+                    "Blob {BlobName} was created concurrently; reusing the existing blob for FretrackCargoDocumentID {FretrackCargoDocumentId}.",
+                    blobName,
+                    fretrackCargoDocumentId);
+            }
         }
 
         return new UploadedDocumentAsset(
@@ -971,10 +1078,10 @@ WHERE b.[{billShipmentIdColumn}] = @ShipmentId
         return blobName;
     }
 
-    private static string BuildBlobName(string fileName)
+    private static string BuildBlobName(int fretrackCargoDocumentId, string fileName)
     {
         var safeFileName = MakeSafeBlobSegment(fileName);
-        return $"FretrackDocuments/{safeFileName}";
+        return $"FretrackDocuments/{fretrackCargoDocumentId}/{safeFileName}";
     }
 
     private static string GetPreferredFileName(DataRow stagingRow, string sourceUrl)
@@ -1215,8 +1322,7 @@ WHERE Id = @UserId;", targetConnection, transaction);
 UPDATE [{schema}].[Fretrack_CargoDocuments_Staging]
 SET {string.Join(", ", setParts)}
 WHERE [{cargoColumn}] = @CargoId
-  AND [{documentColumn}] = @FretrackCargoDocumentId
-  AND ({(string.IsNullOrWhiteSpace(idColumn) ? "1 = 1" : $"[{idColumn}] IS NULL")});", connection, transaction);
+  AND [{documentColumn}] = @FretrackCargoDocumentId;", connection, transaction);
 
         command.Parameters.Add(new SqlParameter("@CargoId", SqlDbType.Int) { Value = cargoId });
         command.Parameters.Add(new SqlParameter("@FretrackCargoDocumentId", SqlDbType.Int) { Value = fretrackCargoDocumentId });

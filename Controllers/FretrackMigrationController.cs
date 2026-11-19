@@ -1,3 +1,6 @@
+using System.Threading.Channels;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using RepoDbApi.Contracts;
 using RepoDbApi.Services;
@@ -19,6 +22,44 @@ public class FretrackMigrationController : ControllerBase
     {
         _service = service;
         _logger = logger;
+    }
+
+    // Same migration and validation as single-job; stream only observed milestones.
+    [HttpPost("single-job/progress")]
+    public async Task MigrateSingleJobWithProgress([FromBody] CargoMigrationRequest request, CancellationToken cancellationToken)
+    {
+        Response.ContentType = "application/x-ndjson";
+        Response.Headers["Cache-Control"] = "no-store";
+        Response.Headers["X-Accel-Buffering"] = "no";
+        HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+        var events = Channel.CreateUnbounded<object>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+        var producer = Task.Run(async () =>
+        {
+            MigrationProgress.Current.Value = events.Writer;
+            try
+            {
+                var result = await MigrateSingleJob(request, cancellationToken);
+                if (result is ObjectResult response && (response.StatusCode ?? 200) < 400)
+                    events.Writer.TryWrite(new { kind = "result", result = response.Value });
+                else
+                    events.Writer.TryWrite(new { kind = "failure", status = (result as ObjectResult)?.StatusCode ?? 500 });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Streaming migration failed");
+                events.Writer.TryWrite(new { kind = "failure", status = 500 });
+            }
+            finally { MigrationProgress.Current.Value = null; events.Writer.TryComplete(); }
+        }, CancellationToken.None);
+        try
+        {
+            await foreach (var item in events.Reader.ReadAllAsync(cancellationToken))
+            {
+                await Response.WriteAsync(JsonSerializer.Serialize(item, new JsonSerializerOptions(JsonSerializerDefaults.Web)) + "\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+            }
+        }
+        finally { await producer; }
     }
 
     [HttpPost("single-job")]
@@ -88,6 +129,7 @@ public class FretrackMigrationController : ControllerBase
         string jobNo,
         CancellationToken cancellationToken)
     {
+        MigrationProgress.Report("zoho-" + resourceLabel, "running");
         var resourceStopwatch = Stopwatch.StartNew();
         try
         {
@@ -96,6 +138,7 @@ public class FretrackMigrationController : ControllerBase
 
             if (!response.IsSuccessStatusCode)
             {
+                MigrationProgress.Report("zoho-" + resourceLabel, "warning");
                 _logger.LogWarning(
                     "Zoho {ResourceLabel} fetch failed for JobNo {JobNo} after {ElapsedMilliseconds} ms with HTTP {StatusCode}: {Content}",
                     resourceLabel,
@@ -106,6 +149,7 @@ public class FretrackMigrationController : ControllerBase
                 return;
             }
 
+            MigrationProgress.Report("zoho-" + resourceLabel, "completed");
             _logger.LogInformation(
                 "Zoho {ResourceLabel} fetch completed for JobNo {JobNo} in {ElapsedMilliseconds} ms.",
                 resourceLabel,
@@ -114,6 +158,7 @@ public class FretrackMigrationController : ControllerBase
         }
         catch (Exception ex)
         {
+            MigrationProgress.Report("zoho-" + resourceLabel, "warning");
             _logger.LogWarning(
                 ex,
                 "Zoho {ResourceLabel} fetch failed for JobNo {JobNo} after {ElapsedMilliseconds} ms. Migration will continue.",

@@ -1,0 +1,29 @@
+{
+  "salesQuoteNumber": "SQCOU-M252600034",
+  "orgId": 18,
+  "importScope": "CHARGES_ONLY",
+  "serviceTypeId": 9,
+  "serviceLabel": "Courier",
+  "transportModeId": 5,
+  "transportMode": "SURFACE",
+  "transportDirectionId": 1,
+  "transportDirection": "EXPORT",
+  "cargoMintPOLID": null,
+  "cargoMintPODID": null,
+  "chargeLines": [
+    {
+      "orgId": 18,
+      "chargeItemId": 82,
+      "chargeDescription": "COURIER CHARGES",
+      "sellCurrencyId": 2,
+      "sellExRate": 94,
+      "sellRate": 794,
+      "sellQuantity": 1,
+      "buyCurrencyId": 1,
+      "buyExRate": 1,
+      "buyRate": 54107,
+      "buyQuantity": 1,
+      "buyTaxPercent": 18
+    }
+  ]
+}

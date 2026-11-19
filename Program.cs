@@ -18,7 +18,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy(LocalAngularCorsPolicy, policy =>
     {
         policy
-            .WithOrigins("https://localhost:4200", "http://localhost:4200")
+            .WithOrigins("https://localhost:4200", "http://localhost:4200","https://demo.cargomint.com")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -29,6 +29,8 @@ builder.Services.AddScoped<ICargoRepository, CargoRepository>();
 builder.Services.AddScoped<ICargoService, CargoService>();
 builder.Services.AddScoped<ICargoMigrationRepository, CargoMigrationRepository>();
 builder.Services.AddScoped<ICargoMigrationService, CargoMigrationService>();
+builder.Services.AddScoped<ISalesQuoteSyncRepository, SalesQuoteSyncRepository>();
+builder.Services.AddScoped<ISalesQuoteSyncService, SalesQuoteSyncService>();
 builder.Services.AddScoped<ICargoDocumentMigrationRepository, CargoDocumentMigrationRepository>();
 builder.Services.AddScoped<ICargoDocumentMigrationService, CargoDocumentMigrationService>();
 builder.Services.AddScoped<IAllCargoListRepository, AllCargoListRepository>();

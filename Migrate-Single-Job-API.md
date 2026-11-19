@@ -148,9 +148,13 @@ The cargo-document insert path now writes:
 
 If the document already exists in `Documents`, the migration now updates the existing row with the same metadata instead of leaving `DocFileType`, `EntityType`, or `EntityId` null.
 
-For bill documents (`DocTypeId = 8`), the migration also backfills matching `Bills` rows for the same shipment by setting `DocumentId` and `DocumentPath` when the bill invoice number appears in `DocDescription`.
+After all cargo documents for the single job have been uploaded or reused, inserted or reused in `Documents`, and their staging `CargoMintDocumentID` values have been updated, the migration synchronizes vendor-bill document links through `Fretrack_VendorBill_Staging`.
 
 The cargo-document insert path also guarantees a non-null `DocTitle` by using the uploaded filename as the final source.
+
+## Implementation Note — 2026-09-30
+
+The single-job migration now performs document-to-bill synchronization as part of the same migration workflow. It updates `Bills.DocumentId` and `Bills.DocumentPath` only after document migration completes for the job, using the `Bills`, `Fretrack_VendorBill_Staging`, and `Documents` relationships and active-record/path-change safeguards. Existing Azure blobs are reused and are not overwritten; the deterministic blob name is `FretrackDocuments/{FretrackCargoDocumentID}/{filename}`. The staging migration remark is recorded as `Migrated to Document {CargoMintDocumentID} at {BlobPath}`.
 
 ## Staging Tables Loaded
 
